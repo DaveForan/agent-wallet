@@ -45,8 +45,10 @@ engine stay rail-agnostic.
 Custody is abstracted so the decision can be deferred:
 
 - **Managed** — keys/funds held by Coinbase CDP / a cloud KMS. No private keys
-  in this process. The intended v1 default.
-- **Local** — self-custody. Full control, all the key-security risk.
+  in this process. The intended v1 default. *(stubbed)*
+- **Local** — self-custody. The wallet generates its own EVM keypair and keeps
+  it in an optionally-encrypted keystore. The x402 rail signs *through* this
+  provider, so the rail never holds the key.
 
 ### Surfaces
 
@@ -70,22 +72,34 @@ category allowlists.
 
 ## Status
 
-The architecture, domain types, policy engine, audit ledger, daemon
-orchestration, and the **MCP server surface** are real and working. The
-payment rails and custody providers are **stubbed** — correct interfaces, not
-yet wired to live networks.
+Real and working: the architecture, policy engine, audit ledger, daemon, the
+**MCP server surface**, **local custody**, and the **x402 rail** on Base
+Sepolia. Still stubbed: the Stripe rail and managed custody.
 
 ```bash
 npm install
-npm run demo        # policy engine end-to-end: allow / deny / needs_approval
-npm run mcp:check   # spawn the MCP server + a client, exercise the tools
-npm run mcp         # run the MCP server on stdio (for an MCP host)
-npm run typecheck   # strict type-check
-npm run build       # emit to dist/
+npm run demo            # policy engine end-to-end: allow / deny / needs_approval
+npm run mcp:check       # spawn the MCP server + a client, exercise the tools
+npm run mcp             # run the MCP server on stdio (for an MCP host)
+npm run custody:address # generate the local keypair, print the funding address
+npm run x402:check      # real x402 payment on Base Sepolia (needs testnet USDC)
+npm run typecheck       # strict type-check
+npm run build           # emit to dist/
 ```
 
-A payment that policy *allows* reaches a stubbed rail and reports `failed` —
-that boundary is exactly where the rail work begins.
+### Paying on Base Sepolia with the x402 rail
+
+1. `npm run custody:address` — generates the wallet's EVM keypair and prints
+   its address.
+2. Fund that address with **Base Sepolia USDC** from a faucet
+   (e.g. [faucet.circle.com](https://faucet.circle.com)). No ETH needed —
+   x402 payments are gasless; the facilitator sponsors gas.
+3. `npm run x402:check` — spawns a local x402-protected endpoint and pays it
+   for real. On success it prints a BaseScan transaction link.
+
+Until the address holds USDC, `x402:check` runs the whole pipeline and stops
+at the facilitator with `insufficient_balance` — proof that quoting and
+signing work; only on-chain settlement needs funds.
 
 ## Connecting it to Claude
 
@@ -112,11 +126,10 @@ surface.
 
 ## Next steps
 
-1. Wire `X402Rail` to the x402 SDK + a facilitator (testnet: Base Sepolia).
-2. Wire `ManagedCustody` to Coinbase CDP server wallets.
-3. Wire `StripeRail` to Stripe Issuing for agents.
-4. Build the human approval UI on top of the HTTP surface.
-5. Replace the in-memory `Ledger` / `MandateStore` with a durable store.
+1. Wire `ManagedCustody` to Coinbase CDP server wallets.
+2. Wire `StripeRail` to Stripe Issuing for agents.
+3. Build the human approval UI on top of the HTTP surface.
+4. Replace the in-memory `Ledger` / `MandateStore` with a durable store.
 
 ## Protocol references
 
