@@ -1,0 +1,38 @@
+{
+  "name": "agent-wallet",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Policy-governed payment wallet for autonomous agents — x402 crypto and Stripe fiat rails behind one trust boundary.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "demo": "node src/demo.ts",
+    "dev": "node --watch src/demo.ts",
+    "mcp": "node src/mcp-main.ts",
+    "mcp:check": "node src/mcp-smoketest.ts",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "agent",
+    "wallet",
+    "x402",
+    "ap2",
+    "payments",
+    "mcp"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  }
+}
