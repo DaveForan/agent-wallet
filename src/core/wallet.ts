@@ -54,6 +54,19 @@ export type PayResult =
       reason: string;
     };
 
+/** Derive a human-readable reason from a rail's unsettled SettlementResult. */
+function settlementFailureReason(settlement: SettlementResult): string {
+  const raw = settlement.raw as
+    | { error?: string; errorMessage?: string; errorReason?: string }
+    | undefined;
+  return (
+    raw?.error ??
+    raw?.errorMessage ??
+    raw?.errorReason ??
+    "the rail did not complete settlement"
+  );
+}
+
 /**
  * The WalletDaemon is the trust boundary between an (untrusted) agent and real
  * money. Agents call `pay()`; the daemon runs policy, records everything to
@@ -179,6 +192,11 @@ export class WalletDaemon {
     try {
       const quote = await rail.quote(request);
       const settlement = await rail.settle(request, quote, this.custody);
+      if (!settlement.settled) {
+        const reason = settlementFailureReason(settlement);
+        this.ledger.append("payment.failed", { settlement }, request.id);
+        return { status: "failed", paymentId: request.id, reason };
+      }
       this.ledger.append("payment.settled", { settlement }, request.id);
       return { status: "settled", paymentId: request.id, settlement };
     } catch (err) {
