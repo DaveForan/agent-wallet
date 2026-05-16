@@ -162,16 +162,30 @@ export class X402Rail implements PaymentRail {
           raw: result.settleResponse,
         };
       case "payment_required":
-        throw new WalletError(
-          "x402 settle: still payment-required after paying — facilitator " +
-            "verification failed",
-        );
+        // The facilitator rejected the signed payment (e.g. the payer has no
+        // balance). A normal outcome, not an exception — report the reason.
+        return {
+          settled: false,
+          reference: "",
+          settledAmount: quote.total,
+          raw: {
+            error:
+              result.paymentRequired.error ??
+              "the facilitator rejected the payment (verification failed)",
+          },
+        };
+      case "passthrough":
+        return {
+          settled: false,
+          reference: "",
+          settledAmount: quote.total,
+          raw: { error: `${url} did not require payment` },
+        };
       case "error":
+        // A transport- or protocol-level failure is genuinely exceptional.
         throw new WalletError(
           `x402 settle: request to ${url} failed with status ${result.status}`,
         );
-      case "passthrough":
-        throw new WalletError(`x402 settle: ${url} did not require payment`);
     }
   }
 
