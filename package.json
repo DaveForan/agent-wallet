@@ -17,6 +17,8 @@
     "mcp": "node src/mcp-main.ts",
     "mcp:check": "node src/mcp-smoketest.ts",
     "custody:address": "node src/custody-init.ts",
+    "x402:resource": "node src/x402-test-resource.ts",
+    "x402:check": "node src/x402-smoketest.ts",
     "start": "node dist/index.js"
   },
   "keywords": [
@@ -29,6 +31,7 @@
   ],
   "license": "UNLICENSED",
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.8.0",
     "typescript": "^6.0.3"
   },
@@ -38,6 +41,7 @@
     "@x402/evm": "^2.12.0",
     "@x402/express": "^2.12.0",
     "@x402/fetch": "^2.12.0",
+    "express": "^5.2.1",
     "viem": "^2.49.3",
     "zod": "^4.4.3"
   }
