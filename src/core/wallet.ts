@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { CustodyProvider } from "../custody/custody.ts";
 import type { PaymentRail, SettlementResult } from "../rails/rail.ts";
+import {
+  InMemoryApprovalStore,
+  type ApprovalStore,
+  type PendingApproval,
+} from "./approvals.ts";
 import { NotImplementedError, WalletError } from "./errors.ts";
 import { InMemoryLedger, type Ledger } from "./ledger.ts";
 import { InMemoryMandateStore, type MandateStore } from "./mandates.ts";
@@ -26,6 +31,8 @@ export interface WalletConfig {
   ledger?: Ledger;
   /** Mandate store. Defaults to an in-memory store. */
   mandates?: MandateStore;
+  /** Pending-approval store. Defaults to an in-memory store. */
+  approvals?: ApprovalStore;
 }
 
 /** What an agent supplies to ask for a payment; `id`/`createdAt` are filled in. */
@@ -33,14 +40,6 @@ export type PaymentInput = Omit<
   PaymentRequest,
   "id" | "createdAt" | "channel"
 > & { channel?: PaymentChannel };
-
-/** A payment still waiting on a human decision. */
-export interface PendingApproval {
-  approvalId: string;
-  request: PaymentRequest;
-  /** Why the policy engine escalated this payment. */
-  reason: string;
-}
 
 /** The outcome of a `pay()` call. */
 export type PayResult =
@@ -78,7 +77,7 @@ export class WalletDaemon {
   private readonly custody: CustodyProvider;
   private readonly ledger: Ledger;
   private readonly mandates: MandateStore;
-  private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly approvals: ApprovalStore;
 
   constructor(config: WalletConfig) {
     this.policy = new PolicyEngine(config.policy);
@@ -86,6 +85,7 @@ export class WalletDaemon {
     this.custody = config.custody;
     this.ledger = config.ledger ?? new InMemoryLedger();
     this.mandates = config.mandates ?? new InMemoryMandateStore();
+    this.approvals = config.approvals ?? new InMemoryApprovalStore();
   }
 
   /** Register a mandate (a grant of spending authority). */
@@ -113,7 +113,7 @@ export class WalletDaemon {
 
   /** Payments still awaiting a human decision. */
   listPendingApprovals(): PendingApproval[] {
-    return [...this.pendingApprovals.values()];
+    return this.approvals.list();
   }
 
   /**
@@ -138,11 +138,7 @@ export class WalletDaemon {
 
     if (decision.outcome === "needs_approval") {
       const approvalId = randomUUID();
-      this.pendingApprovals.set(approvalId, {
-        approvalId,
-        request,
-        reason: decision.reason,
-      });
+      this.approvals.put({ approvalId, request, reason: decision.reason });
       this.ledger.append(
         "approval.requested",
         { approvalId, reason: decision.reason },
@@ -164,9 +160,9 @@ export class WalletDaemon {
     approvalId: string,
     approved: boolean,
   ): Promise<PayResult> {
-    const pending = this.pendingApprovals.get(approvalId);
+    const pending = this.approvals.get(approvalId);
     if (!pending) throw new WalletError(`unknown approval ${approvalId}`);
-    this.pendingApprovals.delete(approvalId);
+    this.approvals.remove(approvalId);
     this.ledger.append(
       "approval.resolved",
       { approvalId, approved },
