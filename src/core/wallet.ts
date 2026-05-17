@@ -22,6 +22,7 @@ import {
   type PaymentChannel,
   type PaymentRequest,
   type PolicyConfig,
+  type PolicyDecision,
   type RailId,
 } from "./types.ts";
 
@@ -59,6 +60,22 @@ export type PayResult =
       approvalId: string;
       reason: string;
     };
+
+/** An operator spend summary, computed from the audit ledger. */
+export interface SpendReport {
+  generatedAt: string;
+  payments: { settled: number; failed: number; denied: number; blocked: number };
+  /** Total settled per currency, as bigint-safe strings. */
+  settledByCurrency: Record<string, string>;
+  pendingApprovals: number;
+  mandates: {
+    id: string;
+    currency: string;
+    cap: string;
+    spent: string;
+    revoked: boolean;
+  }[];
+}
 
 /** Derive a human-readable reason from a rail's unsettled SettlementResult. */
 function settlementFailureReason(settlement: SettlementResult): string {
@@ -135,6 +152,59 @@ export class WalletDaemon {
   /** Read the audit ledger — all events, or one payment's trail. */
   audit(paymentId?: string) {
     return this.ledger.history(paymentId);
+  }
+
+  /** A spend summary for the operator, computed from the audit ledger. */
+  report(): SpendReport {
+    const payments = { settled: 0, failed: 0, denied: 0, blocked: 0 };
+    const settled = new Map<string, bigint>();
+    for (const event of this.ledger.history()) {
+      switch (event.type) {
+        case "payment.settled": {
+          payments.settled++;
+          const result = event.data["settlement"] as
+            | SettlementResult
+            | undefined;
+          if (result?.settled) {
+            const { currency, amount } = result.settledAmount;
+            settled.set(currency, (settled.get(currency) ?? 0n) + amount);
+          }
+          break;
+        }
+        case "payment.failed":
+          payments.failed++;
+          break;
+        case "payment.blocked":
+          payments.blocked++;
+          break;
+        case "policy.decided": {
+          const decision = event.data["decision"] as
+            | PolicyDecision
+            | undefined;
+          if (decision?.outcome === "deny") payments.denied++;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    const settledByCurrency: Record<string, string> = {};
+    for (const [currency, amount] of settled) {
+      settledByCurrency[currency] = amount.toString();
+    }
+    return {
+      generatedAt: new Date().toISOString(),
+      payments,
+      settledByCurrency,
+      pendingApprovals: this.approvals.list().length,
+      mandates: this.mandates.list().map((mandate) => ({
+        id: mandate.id,
+        currency: mandate.cap.currency,
+        cap: mandate.cap.amount.toString(),
+        spent: this.spentAgainstMandate(mandate, undefined).amount.toString(),
+        revoked: mandate.revoked === true,
+      })),
+    };
   }
 
   /** Payments still awaiting a human decision. */

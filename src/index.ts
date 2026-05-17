@@ -29,5 +29,7 @@ export { ManagedCustody, type ManagedCustodyOptions } from "./custody/managed-cu
 export { LocalCustody, type LocalCustodyOptions } from "./custody/local-custody.ts";
 
 export * from "./surfaces/mcp-server.ts";
+export * from "./surfaces/http-util.ts";
 export * from "./surfaces/http-api.ts";
+export * from "./surfaces/control-api.ts";
 export * from "./surfaces/x402-interceptor.ts";
