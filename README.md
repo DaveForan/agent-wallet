@@ -28,6 +28,7 @@ agent ──request──▶ surface ──▶ WalletDaemon ──▶ PolicyEngi
 | **Core**     | Domain types, the policy engine, the audit ledger, the daemon | `src/core/`      |
 | **Rails**    | How value actually moves — pluggable                    | `src/rails/`     |
 | **Custody**  | Where keys & funds live — pluggable                     | `src/custody/`   |
+| **Storage**  | Durable SQLite-backed ledger, mandates, approvals, control | `src/storage/`   |
 | **Surfaces** | How an agent or human reaches the wallet                | `src/surfaces/`  |
 
 ### Rails (`PaymentRail`)
@@ -53,13 +54,25 @@ Custody is abstracted so the decision can be deferred:
 The x402 rail signs *through* whichever provider is configured, so swapping
 local for managed custody needs no rail changes.
 
+### Storage (`src/storage/`)
+
+State is durable in a single `node:sqlite` file (`.agent-wallet/wallet.db`) —
+the audit ledger, mandates, pending approvals and the freeze state all survive
+a restart. A wallet is a **single-writer** store by design: one process owns
+the file, so the spend-cap accounting can never be raced. The in-memory stores
+remain the default for tests and short-lived runs.
+
 ### Surfaces
 
 - **MCP server** — *deliberate* payments: the tools an agent explicitly calls.
   Wired to `@modelcontextprotocol/sdk` over stdio (`npm run mcp`).
 - **x402 interceptor** — *ambient* payments: a `fetch` wrapper that satisfies
   HTTP 402 transparently, so the agent never spends reasoning on a micro-fee.
-- **HTTP API** — for non-MCP agents and the human approval UI.
+- **Payment API** — `POST /pay` for non-MCP agents (`http-api.ts`).
+- **Control API** — the operator's plane (`control-api.ts`): mandate CRUD, the
+  approval queue, freeze/unfreeze, status and a spend report. **Operator-only**
+  and kept separate from the agent surfaces — an agent can never grant itself a
+  mandate or lift a freeze.
 
 ### Autonomy is configuration, not code
 
@@ -76,11 +89,12 @@ category allowlists.
 ## Status
 
 Real and working: the architecture, policy engine, audit ledger, daemon, the
-**MCP server surface**, both custody providers (**local** and **managed/CDP**),
-and both rails — the **x402 rail** on Base Sepolia and the **Stripe rail** on
-Issuing virtual cards. The x402 rail is verified end to end with a real
-on-chain payment; the CDP and Stripe paths are implemented against their SDKs
-and need account credentials to exercise (see below).
+**MCP server surface**, durable **SQLite storage**, the **operator control
+plane**, both custody providers (**local** and **managed/CDP**), and both
+rails — the **x402 rail** on Base Sepolia and the **Stripe rail** on Issuing
+virtual cards. The x402 rail is verified end to end with a real on-chain
+payment; the CDP and Stripe paths are implemented against their SDKs and need
+account credentials to exercise (see below).
 
 ```bash
 npm install
@@ -89,6 +103,7 @@ npm run mcp:check       # spawn the MCP server + a client, exercise the tools
 npm run mcp             # run the MCP server on stdio (for an MCP host)
 npm run custody:address # generate the local keypair, print the funding address
 npm run x402:check      # real x402 payment on Base Sepolia (needs testnet USDC)
+npm run control:check   # durable storage + operator control plane, end to end
 npm run typecheck       # strict type-check
 npm run build           # emit to dist/
 ```
@@ -141,13 +156,14 @@ In Claude Code, from the repo root: `claude mcp add agent-wallet -- node src/mcp
 
 The agent gets three tools — `request_payment`, `get_payment_status`,
 `list_mandates`. It can *request* spend and *read* state; it deliberately has
-no tool to *approve* a payment — approval stays with a human on the HTTP
-surface.
+no tool to *approve* a payment, create a mandate, or lift a freeze — those
+live on the operator control API, a separate surface.
 
 ## Next steps
 
-1. Build the human approval UI on top of the HTTP surface.
-2. Replace the in-memory `Ledger` / `MandateStore` with a durable store.
+1. A web UI for the operator control plane (the HTTP control API is ready for
+   one to sit on top of).
+2. Authentication on the control API before it is exposed beyond localhost.
 3. End-to-end verification of the CDP and Stripe paths against real accounts.
 
 ## Protocol references
