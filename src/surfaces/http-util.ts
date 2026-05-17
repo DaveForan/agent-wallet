@@ -1,5 +1,6 @@
 import {
   createServer,
+  type IncomingHttpHeaders,
   type IncomingMessage,
   type Server,
   type ServerResponse,
@@ -26,6 +27,23 @@ export type HttpRouter = (
   body: unknown,
 ) => Promise<HttpResult>;
 
+/** What an `authorize` predicate sees about a request — never the body. */
+export interface AuthContext {
+  method: string;
+  path: string;
+  query: URLSearchParams;
+  headers: IncomingHttpHeaders;
+}
+
+/** Options for {@link serve}. */
+export interface ServeOptions {
+  /**
+   * Gate every request. When provided and it returns false, the request is
+   * rejected with 401 before the body is read or the router runs.
+   */
+  authorize?: (ctx: AuthContext) => boolean;
+}
+
 /**
  * Parse an untrusted JSON value into a {@link Money}. JSON cannot carry a
  * bigint, so an incoming amount arrives as a number or string — this restores
@@ -40,9 +58,14 @@ export function parseMoney(raw: unknown): Money {
 }
 
 /** Start an HTTP server that dispatches every request through `router`. */
-export function serve(name: string, router: HttpRouter, port: number): Server {
+export function serve(
+  name: string,
+  router: HttpRouter,
+  port: number,
+  options: ServeOptions = {},
+): Server {
   const server = createServer((req, res) => {
-    void dispatch(router, req, res);
+    void dispatch(router, req, res, options);
   });
   server.listen(port, () => {
     console.log(`agent-wallet ${name} on http://localhost:${port}`);
@@ -54,17 +77,29 @@ async function dispatch(
   router: HttpRouter,
   req: IncomingMessage,
   res: ServerResponse,
+  options: ServeOptions,
 ): Promise<void> {
   try {
     const url = new URL(req.url ?? "/", "http://localhost");
+    const method = req.method ?? "GET";
+
+    if (
+      options.authorize &&
+      !options.authorize({
+        method,
+        path: url.pathname,
+        query: url.searchParams,
+        headers: req.headers,
+      })
+    ) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unauthorized" }));
+      return;
+    }
+
     const raw = await readBody(req);
     const body: unknown = raw ? JSON.parse(raw) : undefined;
-    const result = await router(
-      req.method ?? "GET",
-      url.pathname,
-      url.searchParams,
-      body,
-    );
+    const result = await router(method, url.pathname, url.searchParams, body);
     if (result.contentType) {
       res.writeHead(result.status, { "content-type": result.contentType });
       res.end(String(result.body));
