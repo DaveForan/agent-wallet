@@ -73,7 +73,8 @@ remain the default for tests and short-lived runs.
   CRUD, the approval queue, freeze/unfreeze, status and a spend report, with a
   self-contained web console served at `GET /` (`control-ui.ts`).
   **Operator-only** and kept separate from the agent surfaces — an agent can
-  never grant itself a mandate or lift a freeze.
+  never grant itself a mandate or lift a freeze. Every endpoint but `GET /`
+  requires a **bearer token** (`Authorization: Bearer` header or `?token=`).
 
 ### Autonomy is configuration, not code
 
@@ -115,13 +116,15 @@ npm run build           # emit to dist/
 `npm run control` starts the wallet with durable SQLite storage and opens two
 HTTP surfaces from one process:
 
-- **operator control plane + web UI** — <http://localhost:4023/>
+- **operator control plane + web UI** — `http://localhost:4023/`
 - **agent payment API** — `POST http://localhost:4022/pay`
 
-Open the control URL in a browser for the operator console: the freeze
-kill-switch, the approval queue, mandates (with spend bars and a create form),
-the spend report, and a live audit feed. State persists in
-`.agent-wallet/wallet.db` across restarts.
+On startup the daemon prints a control token (set `AGENT_WALLET_CONTROL_TOKEN`
+to pin your own) and a ready-to-open `…/?token=…` URL. Open it in a browser for
+the operator console: the freeze kill-switch, the approval queue, mandates
+(with spend bars and a create form), the spend report, and a live audit feed.
+The page captures the token and carries it on every API call. State persists
+in `.agent-wallet/wallet.db` across restarts.
 
 ### Paying on Base Sepolia with the x402 rail
 
@@ -176,11 +179,10 @@ live on the operator control API, a separate surface.
 
 ## Next steps
 
-1. Authentication on the control API before it is exposed beyond localhost.
-2. Unify the process model — one daemon exposing the MCP surface alongside the
+1. Unify the process model — one daemon exposing the MCP surface alongside the
    control plane and payment API, so an MCP agent and the operator share a
    wallet.
-3. End-to-end verification of the CDP and Stripe paths against real accounts.
+2. End-to-end verification of the CDP and Stripe paths against real accounts.
 
 ## Protocol references
 
