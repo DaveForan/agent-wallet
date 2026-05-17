@@ -44,11 +44,14 @@ engine stay rail-agnostic.
 
 Custody is abstracted so the decision can be deferred:
 
-- **Managed** — keys/funds held by Coinbase CDP / a cloud KMS. No private keys
-  in this process. The intended v1 default. *(stubbed)*
+- **Managed** — keys held by Coinbase CDP server wallets. No private keys in
+  this process; agent-wallet holds only API credentials. The intended v1
+  default.
 - **Local** — self-custody. The wallet generates its own EVM keypair and keeps
-  it in an optionally-encrypted keystore. The x402 rail signs *through* this
-  provider, so the rail never holds the key.
+  it in an optionally-encrypted keystore.
+
+The x402 rail signs *through* whichever provider is configured, so swapping
+local for managed custody needs no rail changes.
 
 ### Surfaces
 
@@ -73,8 +76,11 @@ category allowlists.
 ## Status
 
 Real and working: the architecture, policy engine, audit ledger, daemon, the
-**MCP server surface**, **local custody**, and the **x402 rail** on Base
-Sepolia. Still stubbed: the Stripe rail and managed custody.
+**MCP server surface**, both custody providers (**local** and **managed/CDP**),
+and both rails — the **x402 rail** on Base Sepolia and the **Stripe rail** on
+Issuing virtual cards. The x402 rail is verified end to end with a real
+on-chain payment; the CDP and Stripe paths are implemented against their SDKs
+and need account credentials to exercise (see below).
 
 ```bash
 npm install
@@ -101,6 +107,20 @@ Until the address holds USDC, `x402:check` runs the whole pipeline and stops
 at the facilitator with `insufficient_balance` — proof that quoting and
 signing work; only on-chain settlement needs funds.
 
+### Managed custody (Coinbase CDP)
+
+`ManagedCustody` is a drop-in replacement for `LocalCustody` — the x402 rail
+needs no changes. It reads `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET` and
+`CDP_WALLET_SECRET` (created free in the [CDP Portal](https://portal.cdp.coinbase.com/)),
+resolves a CDP server account, and signs with the CDP-held key.
+
+### The Stripe rail (Issuing for agents)
+
+`StripeRail.settle()` issues a single-use virtual card whose spend limit is
+locked to the authorized amount. It needs `STRIPE_SECRET_KEY` — use a
+**test-mode** key (`sk_test_...`) so no real money moves — with Issuing
+enabled on the account.
+
 ## Connecting it to Claude
 
 The MCP server is the agent-facing surface. Point an MCP host at it:
@@ -126,10 +146,9 @@ surface.
 
 ## Next steps
 
-1. Wire `ManagedCustody` to Coinbase CDP server wallets.
-2. Wire `StripeRail` to Stripe Issuing for agents.
-3. Build the human approval UI on top of the HTTP surface.
-4. Replace the in-memory `Ledger` / `MandateStore` with a durable store.
+1. Build the human approval UI on top of the HTTP surface.
+2. Replace the in-memory `Ledger` / `MandateStore` with a durable store.
+3. End-to-end verification of the CDP and Stripe paths against real accounts.
 
 ## Protocol references
 
