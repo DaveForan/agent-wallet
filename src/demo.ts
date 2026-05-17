@@ -101,7 +101,10 @@ async function run(): Promise<void> {
   });
   console.log(`  $   7.50  ->  ${describe(overCap)}`);
 
-  console.log("\n(policy engine works end-to-end; rails are stubbed — see README)\n");
+  console.log(
+    "\n(policy engine works end-to-end; see README for the live x402 and " +
+      "Stripe rail tests)\n",
+  );
 }
 
 run().catch((err: unknown) => {
