@@ -69,10 +69,11 @@ remain the default for tests and short-lived runs.
 - **x402 interceptor** — *ambient* payments: a `fetch` wrapper that satisfies
   HTTP 402 transparently, so the agent never spends reasoning on a micro-fee.
 - **Payment API** — `POST /pay` for non-MCP agents (`http-api.ts`).
-- **Control API** — the operator's plane (`control-api.ts`): mandate CRUD, the
-  approval queue, freeze/unfreeze, status and a spend report. **Operator-only**
-  and kept separate from the agent surfaces — an agent can never grant itself a
-  mandate or lift a freeze.
+- **Control API + web UI** — the operator's plane (`control-api.ts`): mandate
+  CRUD, the approval queue, freeze/unfreeze, status and a spend report, with a
+  self-contained web console served at `GET /` (`control-ui.ts`).
+  **Operator-only** and kept separate from the agent surfaces — an agent can
+  never grant itself a mandate or lift a freeze.
 
 ### Autonomy is configuration, not code
 
@@ -99,6 +100,7 @@ account credentials to exercise (see below).
 ```bash
 npm install
 npm run demo            # policy engine end-to-end: allow / deny / needs_approval
+npm run control         # run the wallet daemon — opens the control UI + APIs
 npm run mcp:check       # spawn the MCP server + a client, exercise the tools
 npm run mcp             # run the MCP server on stdio (for an MCP host)
 npm run custody:address # generate the local keypair, print the funding address
@@ -107,6 +109,19 @@ npm run control:check   # durable storage + operator control plane, end to end
 npm run typecheck       # strict type-check
 npm run build           # emit to dist/
 ```
+
+### Running the wallet daemon
+
+`npm run control` starts the wallet with durable SQLite storage and opens two
+HTTP surfaces from one process:
+
+- **operator control plane + web UI** — <http://localhost:4023/>
+- **agent payment API** — `POST http://localhost:4022/pay`
+
+Open the control URL in a browser for the operator console: the freeze
+kill-switch, the approval queue, mandates (with spend bars and a create form),
+the spend report, and a live audit feed. State persists in
+`.agent-wallet/wallet.db` across restarts.
 
 ### Paying on Base Sepolia with the x402 rail
 
@@ -161,9 +176,10 @@ live on the operator control API, a separate surface.
 
 ## Next steps
 
-1. A web UI for the operator control plane (the HTTP control API is ready for
-   one to sit on top of).
-2. Authentication on the control API before it is exposed beyond localhost.
+1. Authentication on the control API before it is exposed beyond localhost.
+2. Unify the process model — one daemon exposing the MCP surface alongside the
+   control plane and payment API, so an MCP agent and the operator share a
+   wallet.
 3. End-to-end verification of the CDP and Stripe paths against real accounts.
 
 ## Protocol references
