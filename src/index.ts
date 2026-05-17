@@ -9,6 +9,7 @@ export * from "./core/errors.ts";
 export * from "./core/ledger.ts";
 export * from "./core/mandates.ts";
 export * from "./core/approvals.ts";
+export * from "./core/control.ts";
 export * from "./core/policy.ts";
 export * from "./core/wallet.ts";
 
@@ -17,6 +18,7 @@ export * from "./storage/db.ts";
 export * from "./storage/sqlite-ledger.ts";
 export * from "./storage/sqlite-mandate-store.ts";
 export * from "./storage/sqlite-approval-store.ts";
+export * from "./storage/sqlite-control-state.ts";
 
 export * from "./rails/rail.ts";
 export { X402Rail, type X402Network, type X402RailOptions } from "./rails/x402-rail.ts";

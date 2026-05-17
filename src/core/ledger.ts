@@ -9,12 +9,15 @@
 export type LedgerEventType =
   | "payment.requested"
   | "policy.decided"
+  | "payment.blocked"
   | "approval.requested"
   | "approval.resolved"
   | "payment.settled"
   | "payment.failed"
   | "mandate.created"
-  | "mandate.revoked";
+  | "mandate.revoked"
+  | "wallet.frozen"
+  | "wallet.unfrozen";
 
 export interface LedgerEvent {
   /** Monotonic sequence number, unique and ordered. */

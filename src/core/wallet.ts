@@ -6,6 +6,11 @@ import {
   type ApprovalStore,
   type PendingApproval,
 } from "./approvals.ts";
+import {
+  InMemoryControlState,
+  type ControlState,
+  type FreezeStatus,
+} from "./control.ts";
 import { NotImplementedError, WalletError } from "./errors.ts";
 import { InMemoryLedger, type Ledger } from "./ledger.ts";
 import { InMemoryMandateStore, type MandateStore } from "./mandates.ts";
@@ -33,6 +38,8 @@ export interface WalletConfig {
   mandates?: MandateStore;
   /** Pending-approval store. Defaults to an in-memory store. */
   approvals?: ApprovalStore;
+  /** Freeze / kill-switch state. Defaults to in-memory. */
+  control?: ControlState;
 }
 
 /** What an agent supplies to ask for a payment; `id`/`createdAt` are filled in. */
@@ -78,6 +85,7 @@ export class WalletDaemon {
   private readonly ledger: Ledger;
   private readonly mandates: MandateStore;
   private readonly approvals: ApprovalStore;
+  private readonly control: ControlState;
 
   constructor(config: WalletConfig) {
     this.policy = new PolicyEngine(config.policy);
@@ -86,6 +94,24 @@ export class WalletDaemon {
     this.ledger = config.ledger ?? new InMemoryLedger();
     this.mandates = config.mandates ?? new InMemoryMandateStore();
     this.approvals = config.approvals ?? new InMemoryApprovalStore();
+    this.control = config.control ?? new InMemoryControlState();
+  }
+
+  /** Freeze the wallet — every payment is rejected until it is unfrozen. */
+  freeze(reason: string): void {
+    this.control.freeze(reason);
+    this.ledger.append("wallet.frozen", { reason });
+  }
+
+  /** Lift a freeze, allowing payments to resume. */
+  unfreeze(): void {
+    this.control.unfreeze();
+    this.ledger.append("wallet.unfrozen", {});
+  }
+
+  /** The current freeze state. */
+  controlStatus(): FreezeStatus {
+    return this.control.status();
   }
 
   /** Register a mandate (a grant of spending authority). */
@@ -128,6 +154,13 @@ export class WalletDaemon {
       createdAt: new Date().toISOString(),
     };
     this.ledger.append("payment.requested", { request }, request.id);
+
+    // The freeze is an absolute gate above policy: a frozen wallet pays nobody.
+    const frozen = this.frozenReason();
+    if (frozen) {
+      this.ledger.append("payment.blocked", { reason: frozen }, request.id);
+      return { status: "denied", paymentId: request.id, reason: frozen };
+    }
 
     const decision = this.policy.evaluate(request, this.contextFor(request));
     this.ledger.append("policy.decided", { decision }, request.id);
@@ -175,6 +208,12 @@ export class WalletDaemon {
         reason: "approval rejected by human reviewer",
       };
     }
+    // A freeze applied while the approval was pending still blocks settlement.
+    const frozen = this.frozenReason();
+    if (frozen) {
+      this.ledger.append("payment.blocked", { reason: frozen }, pending.request.id);
+      return { status: "denied", paymentId: pending.request.id, reason: frozen };
+    }
     return this.settle(pending.request);
   }
 
@@ -205,6 +244,13 @@ export class WalletDaemon {
       this.ledger.append("payment.failed", { reason }, request.id);
       return { status: "failed", paymentId: request.id, reason };
     }
+  }
+
+  /** The rejection reason if the wallet is frozen, otherwise undefined. */
+  private frozenReason(): string | undefined {
+    const freeze = this.control.status();
+    if (!freeze.frozen) return undefined;
+    return `wallet is frozen${freeze.reason ? `: ${freeze.reason}` : ""}`;
   }
 
   /** Assemble policy context: the mandate plus spend already on the ledger. */
