@@ -110,6 +110,8 @@ export const CONTROL_UI_HTML = `<!doctype html>
   <span class="sub">operator control plane</span>
   <span class="spacer"></span>
   <span id="err" class="err" role="status" aria-live="polite"></span>
+  <input id="token" type="password" placeholder="control token"
+    aria-label="control token" style="width:150px">
   <button id="refresh" class="btn">Refresh</button>
 </header>
 <main>
@@ -170,13 +172,19 @@ function fmt(n) {
 }
 function shortId(s) { return s ? esc(String(s).slice(0, 8)) : "—"; }
 function setErr(m) { document.getElementById("err").textContent = m; }
+function getToken() { return sessionStorage.getItem("aw-token") || ""; }
 
 async function j(method, path, body) {
+  var headers = {};
+  var token = getToken();
+  if (token) headers["authorization"] = "Bearer " + token;
+  if (body) headers["content-type"] = "application/json";
   var res = await fetch(path, {
     method: method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: headers,
     body: body ? JSON.stringify(body) : undefined
   });
+  if (res.status === 401) throw new Error("unauthorized — set the control token");
   var data = await res.json();
   if (!res.ok) throw new Error((data && data.error) || ("HTTP " + res.status));
   return data;
@@ -345,6 +353,24 @@ document.getElementById("new-mandate").addEventListener("submit", function (ev) 
     });
   });
 });
+
+(function initToken() {
+  // A token passed as ?token=... is captured, then stripped from the address
+  // bar so it does not linger in history or get shoulder-surfed.
+  var urlToken = new URLSearchParams(location.search).get("token");
+  if (urlToken) {
+    sessionStorage.setItem("aw-token", urlToken);
+    history.replaceState({}, "", location.pathname);
+  }
+  var input = document.getElementById("token");
+  input.value = getToken();
+  input.addEventListener("change", function () {
+    var t = input.value.trim();
+    if (t) sessionStorage.setItem("aw-token", t);
+    else sessionStorage.removeItem("aw-token");
+    refresh();
+  });
+})();
 
 refresh();
 setInterval(function () { if (!BUSY) refresh(); }, 5000);

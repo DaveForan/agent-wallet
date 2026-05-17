@@ -8,9 +8,11 @@
  * Both share one WalletDaemon and one SQLite file. A wallet is single-writer
  * by design, so it runs in exactly one process — this is that process.
  *
- * Env overrides: AGENT_WALLET_DB, AGENT_WALLET_CONTROL_PORT, AGENT_WALLET_PAY_PORT.
+ * Env overrides: AGENT_WALLET_DB, AGENT_WALLET_CONTROL_PORT,
+ * AGENT_WALLET_PAY_PORT, AGENT_WALLET_CONTROL_TOKEN.
  */
 
+import { randomBytes } from "node:crypto";
 import { money } from "./core/types.ts";
 import { WalletDaemon } from "./core/wallet.ts";
 import { LocalCustody } from "./custody/local-custody.ts";
@@ -44,12 +46,21 @@ const wallet = new WalletDaemon({
 const controlPort = Number(process.env["AGENT_WALLET_CONTROL_PORT"] ?? 4023);
 const payPort = Number(process.env["AGENT_WALLET_PAY_PORT"] ?? 4022);
 
-startControlServer(wallet, controlPort);
+// The control plane is operator-only. A token is always required — when none
+// is configured one is generated, so the control API is never open by default.
+const controlToken =
+  process.env["AGENT_WALLET_CONTROL_TOKEN"] ??
+  randomBytes(24).toString("base64url");
+
+startControlServer(wallet, controlPort, controlToken);
 startHttpServer(wallet, payPort);
 
 console.log("\nagent-wallet control daemon ready");
-console.log(`  control plane + UI : http://localhost:${controlPort}/`);
-console.log(`  agent payment API  : http://localhost:${payPort}/pay\n`);
+console.log(
+  `  control plane + UI : http://localhost:${controlPort}/?token=${controlToken}`,
+);
+console.log(`  agent payment API  : http://localhost:${payPort}/pay`);
+console.log(`  control token      : ${controlToken}\n`);
 
 process.on("SIGINT", () => {
   console.log("\nshutting down");

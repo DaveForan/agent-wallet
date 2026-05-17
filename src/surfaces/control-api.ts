@@ -1,18 +1,24 @@
+import { timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
 import type { Mandate, RailId } from "../core/types.ts";
 import type { WalletDaemon } from "../core/wallet.ts";
 import { CONTROL_UI_HTML } from "./control-ui.ts";
-import { parseMoney, serve, type HttpResult } from "./http-util.ts";
+import {
+  parseMoney,
+  serve,
+  type AuthContext,
+  type HttpResult,
+} from "./http-util.ts";
 
 /**
  * Operator control plane — the human's surface for running the wallet.
  *
  * These endpoints are OPERATOR-ONLY. They create mandates (grant spending
  * authority), resolve approvals, and unfreeze the wallet — so they must never
- * be reachable by the agent. Bind this server to localhost, and in a real
- * deployment put authentication in front of it. The agent gets only the MCP
- * surface and the payment API, neither of which can grant authority or lift a
- * freeze.
+ * be reachable by the agent. When `startControlServer` is given a token,
+ * every endpoint except `GET /` requires it as an `Authorization: Bearer`
+ * header or a `?token=` query parameter. The agent gets only the MCP surface
+ * and the payment API, neither of which can grant authority or lift a freeze.
  *
  *   GET  /                          the control-plane web UI
  *   GET  /status                    freeze state + queue sizes
@@ -120,17 +126,52 @@ export async function routeControlRequest(
   return notFound(`route ${method} ${path}`);
 }
 
-/** Start the operator control plane. */
+/**
+ * Start the operator control plane.
+ *
+ * When `token` is given, every endpoint except `GET /` requires it. When it is
+ * omitted the API is unauthenticated — intended only for tests; the
+ * `control` daemon always supplies a token.
+ */
 export function startControlServer(
   wallet: WalletDaemon,
   port = 4023,
+  token?: string,
 ): Server {
   return serve(
     "control API",
     (method, path, query, body) =>
       routeControlRequest(wallet, method, path, query, body),
     port,
+    token ? { authorize: (ctx) => isAuthorized(ctx, token) } : {},
   );
+}
+
+/**
+ * Authorise a control-API request. `GET /` (the static UI page) is always
+ * allowed so a browser can load the console; every other endpoint requires
+ * the bearer token, from an `Authorization: Bearer` header or `?token=`.
+ */
+function isAuthorized(ctx: AuthContext, token: string): boolean {
+  if (ctx.method === "GET" && (ctx.path === "/" || ctx.path === "/index.html")) {
+    return true;
+  }
+  const presented =
+    bearerToken(ctx.headers["authorization"]) ?? ctx.query.get("token") ?? "";
+  return constantTimeEquals(presented, token);
+}
+
+/** Extract the token from an `Authorization: Bearer <token>` header value. */
+function bearerToken(header: string | string[] | undefined): string | undefined {
+  const value = Array.isArray(header) ? header[0] : header;
+  return value?.startsWith("Bearer ") ? value.slice(7) : undefined;
+}
+
+/** Compare two strings without leaking their relationship through timing. */
+function constantTimeEquals(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
 function notFound(what: string): HttpResult {

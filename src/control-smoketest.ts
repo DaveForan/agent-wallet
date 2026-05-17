@@ -179,6 +179,35 @@ async function main(): Promise<void> {
         .map((line) => `  ${line}`)
         .join("\n"),
     );
+
+    // --- Phase 3: bearer-token authentication on the control API.
+    console.log("\nphase 3: control-API authentication");
+    const token = "smoke-test-token";
+    const authBase = `http://localhost:${PORT + 1}`;
+    const authServer = startControlServer(walletB, PORT + 1, token);
+    if (!authServer.listening) await once(authServer, "listening");
+    try {
+      const noToken = await fetch(`${authBase}/status`);
+      check("a request with no token is rejected 401", noToken.status === 401);
+
+      const wrongToken = await fetch(`${authBase}/status`, {
+        headers: { authorization: "Bearer wrong" },
+      });
+      check("a wrong token is rejected 401", wrongToken.status === 401);
+
+      const headerAuth = await fetch(`${authBase}/status`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      check("the right token is accepted", headerAuth.status === 200);
+
+      const queryAuth = await fetch(`${authBase}/status?token=${token}`);
+      check("the token also works as a ?token= query param", queryAuth.status === 200);
+
+      const uiOpen = await fetch(`${authBase}/`);
+      check("GET / serves the UI without a token", uiOpen.status === 200);
+    } finally {
+      authServer.close();
+    }
   } finally {
     server.close();
     dbB.close();
