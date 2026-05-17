@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type { Mandate, RailId } from "../core/types.ts";
 import type { WalletDaemon } from "../core/wallet.ts";
+import { CONTROL_UI_HTML } from "./control-ui.ts";
 import { parseMoney, serve, type HttpResult } from "./http-util.ts";
 
 /**
@@ -13,6 +14,7 @@ import { parseMoney, serve, type HttpResult } from "./http-util.ts";
  * surface and the payment API, neither of which can grant authority or lift a
  * freeze.
  *
+ *   GET  /                          the control-plane web UI
  *   GET  /status                    freeze state + queue sizes
  *   GET  /report                    spend summary from the ledger
  *   GET  /audit?paymentId=...        raw audit ledger
@@ -32,6 +34,14 @@ export async function routeControlRequest(
   query: URLSearchParams,
   body: unknown,
 ): Promise<HttpResult> {
+  if (method === "GET" && (path === "/" || path === "/index.html")) {
+    return {
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body: CONTROL_UI_HTML,
+    };
+  }
+
   if (method === "GET" && path === "/status") {
     return {
       status: 200,

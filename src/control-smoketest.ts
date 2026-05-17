@@ -163,6 +163,15 @@ async function main(): Promise<void> {
         report.mandates.length === 2,
     );
 
+    const uiRes = await fetch(`http://localhost:${PORT}/`);
+    const uiHtml = await uiRes.text();
+    check(
+      "GET / serves the control-plane web UI",
+      (uiRes.headers.get("content-type") ?? "").includes("text/html") &&
+        uiHtml.includes("agent-wallet") &&
+        uiHtml.includes("Approval queue"),
+    );
+
     console.log("\nfinal report:");
     console.log(
       JSON.stringify(report, null, 2)

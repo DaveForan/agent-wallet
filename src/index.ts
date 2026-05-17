@@ -32,4 +32,5 @@ export * from "./surfaces/mcp-server.ts";
 export * from "./surfaces/http-util.ts";
 export * from "./surfaces/http-api.ts";
 export * from "./surfaces/control-api.ts";
+export * from "./surfaces/control-ui.ts";
 export * from "./surfaces/x402-interceptor.ts";

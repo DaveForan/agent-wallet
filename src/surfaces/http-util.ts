@@ -10,6 +10,12 @@ import { bigintReplacer, type Money } from "../core/types.ts";
 export interface HttpResult {
   status: number;
   body: unknown;
+  /**
+   * Content type of the response. When set, `body` is sent verbatim as a
+   * string (used to serve the control UI's HTML). When omitted, `body` is
+   * JSON-encoded.
+   */
+  contentType?: string;
 }
 
 /** A pure request router: maps (method, path, query, body) to a result. */
@@ -59,8 +65,13 @@ async function dispatch(
       url.searchParams,
       body,
     );
-    res.writeHead(result.status, { "content-type": "application/json" });
-    res.end(JSON.stringify(result.body, bigintReplacer));
+    if (result.contentType) {
+      res.writeHead(result.status, { "content-type": result.contentType });
+      res.end(String(result.body));
+    } else {
+      res.writeHead(result.status, { "content-type": "application/json" });
+      res.end(JSON.stringify(result.body, bigintReplacer));
+    }
   } catch (err) {
     res.writeHead(500, { "content-type": "application/json" });
     res.end(
