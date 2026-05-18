@@ -29,6 +29,7 @@ agent ──request──▶ surface ──▶ WalletDaemon ──▶ PolicyEngi
 | **Rails**    | How value actually moves — pluggable                    | `src/rails/`     |
 | **Custody**  | Where keys & funds live — pluggable                     | `src/custody/`   |
 | **Storage**  | Durable SQLite-backed ledger, mandates, approvals, control | `src/storage/`   |
+| **ACP**      | Agentic Commerce Protocol client + cart verification    | `src/acp/`       |
 | **Surfaces** | How an agent or human reaches the wallet                | `src/surfaces/`  |
 
 ### Rails (`PaymentRail`)
@@ -37,9 +38,27 @@ agent ──request──▶ surface ──▶ WalletDaemon ──▶ PolicyEngi
   Coinbase / Cloudflare standard).
 - **Stripe** — the fiat rail. Virtual cards via Stripe "Issuing for agents",
   with real-time authorization and spend controls.
+- **ACP** — the agentic-checkout rail. Pays an Agentic Commerce Protocol
+  merchant by minting a Stripe Shared Payment Token scoped to that merchant
+  and the cart total, then completing the merchant's checkout session.
 
-Both sit behind one `PaymentRail` interface, so the daemon and the policy
+All three sit behind one `PaymentRail` interface, so the daemon and the policy
 engine stay rail-agnostic.
+
+### Agentic checkout (`src/acp/`)
+
+For any merchant that supports the **Agentic Commerce Protocol**, the agent
+can shop and the wallet governs the spend by *what is in the cart*:
+
+- The agent builds a cart with the merchant (MCP tools `acp_create_checkout`,
+  `pay_checkout`).
+- The wallet **re-fetches and verifies** the merchant's checkout session
+  before policy — the agent's claimed cart is never trusted.
+- The policy engine reasons over **line items**: a mandate can be scoped to
+  merchants, allowed/blocked categories, and a per-item price cap.
+- On approval the **ACP rail** mints a scoped Shared Payment Token against the
+  registered **funding source** and completes the purchase; the merchant order
+  is reconciled onto the audit ledger.
 
 ### Custody (`CustodyProvider`)
 
@@ -189,10 +208,12 @@ the daemon runs.
 standalone wallet*, not the daemon's. Use it only when HTTP transport is not an
 option.
 
-The agent gets three tools — `request_payment`, `get_payment_status`,
-`list_mandates`. It can *request* spend and *read* state; it deliberately has
-no tool to *approve* a payment, create a mandate, or lift a freeze — those
-live on the operator control API, a separate surface.
+The agent gets payment tools — `request_payment`, `get_payment_status`,
+`list_mandates` — and agentic-checkout tools — `acp_create_checkout`,
+`acp_checkout_status`, `pay_checkout`. It can *request* spend, *shop*, and
+*read* state; it deliberately has no tool to *approve* a payment, create a
+mandate, or lift a freeze — those live on the operator control API, a separate
+surface.
 
 ## Known limitations
 
@@ -208,15 +229,23 @@ These are deliberate boundaries of the first scope, not bugs:
 - **`LocalCustody` holds the signing key in the daemon's process.** For
   stronger isolation use `ManagedCustody` (Coinbase CDP), where the key never
   enters this process.
+- **The ACP rail is implemented but not live-verified.** It is built against
+  the ACP `2026-04-17` spec and the Stripe Shared Payment Token API; running
+  it end to end needs Stripe SPT program access and a real ACP merchant. The
+  unit tests cover cart verification, the rail's guards and the order mapping.
+- **Per-line-item categories depend on the merchant.** Category and
+  blocked-category mandate rules only bind line items the merchant labels;
+  merchant-level scoping (`allowedMerchants`) always applies.
 
 ## Next steps
 
-1. End-to-end verification of the CDP and Stripe paths against real accounts
-   (turnkey — see *Verifying* above).
+1. End-to-end verification of the CDP, Stripe and ACP paths against real
+   accounts and a real merchant.
 
 ## Protocol references
 
 - [x402](https://www.x402.org/) — HTTP-native crypto payments
 - [AP2](https://ap2-protocol.org/) — Agent Payments Protocol (mandates)
-- [Stripe Issuing for agents](https://docs.stripe.com/issuing/agents)
+- [ACP](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol) — Agentic Commerce Protocol (checkout)
+- [Stripe agentic commerce](https://docs.stripe.com/agentic-commerce) — Shared Payment Tokens, Issuing
 - [Model Context Protocol](https://modelcontextprotocol.io/)
