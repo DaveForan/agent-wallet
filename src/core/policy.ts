@@ -53,7 +53,18 @@ export class PolicyEngine {
       }
     }
 
-    // 2. Mandate checks — a mandate is a hard grant; violations are denials.
+    // 2. A cart's merchant-declared total must not exceed the authorized amount.
+    if (req.cart) {
+      const cmp = compareMoney(req.cart.total, req.amount);
+      if (cmp === undefined || cmp > 0) {
+        return deny(
+          `cart total ${formatMoney(req.cart.total)} exceeds the authorized ` +
+            `amount ${formatMoney(req.amount)}`,
+        );
+      }
+    }
+
+    // 3. Mandate checks — a mandate is a hard grant; violations are denials.
     const { mandate } = ctx;
     if (mandate) {
       const violated = this.checkMandate(req, ctx, mandate);
@@ -62,7 +73,7 @@ export class PolicyEngine {
       return needsApproval("no mandate supplied and requireMandate is set");
     }
 
-    // 3. Autonomy mode decides allow vs. human approval for permitted spend.
+    // 4. Autonomy mode decides allow vs. human approval for permitted spend.
     return this.applyAutonomy(req);
   }
 
@@ -89,14 +100,27 @@ export class PolicyEngine {
       return deny(`payee ${req.payee.address} is not on the mandate allowlist`);
     }
 
-    if (
-      mandate.allowedCategories?.length &&
-      (!req.payee.category ||
-        !mandate.allowedCategories.includes(req.payee.category))
-    ) {
-      return deny(
-        `payee category "${req.payee.category ?? "unknown"}" is not permitted`,
-      );
+    if (mandate.allowedCategories?.length) {
+      const allowed = mandate.allowedCategories;
+      if (req.cart) {
+        // With a cart, every line item's category must be permitted.
+        for (const item of req.cart.lineItems) {
+          if (!item.category || !allowed.includes(item.category)) {
+            return deny(
+              `cart item "${item.name}" is category ` +
+                `"${item.category ?? "unknown"}", which the mandate does ` +
+                `not permit`,
+            );
+          }
+        }
+      } else if (
+        !req.payee.category ||
+        !allowed.includes(req.payee.category)
+      ) {
+        return deny(
+          `payee category "${req.payee.category ?? "unknown"}" is not permitted`,
+        );
+      }
     }
 
     if (mandate.perTxnCap) {

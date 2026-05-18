@@ -211,6 +211,18 @@ function renderBanner(status) {
   }
 }
 
+function renderCart(cart) {
+  if (!cart || !cart.lineItems || !cart.lineItems.length) return "";
+  var merchant = (cart.merchant && (cart.merchant.name || cart.merchant.id)) || "merchant";
+  var items = cart.lineItems.map(function (li) {
+    var price = li.unitPrice || {};
+    return '<div class="meta">&nbsp;&nbsp;· ' + esc(li.quantity) + " × " +
+      esc(li.name) + "  (" + fmt(esc(price.amount)) + " " + esc(price.currency) +
+      ")" + (li.category ? " — " + esc(li.category) : "") + "</div>";
+  }).join("");
+  return '<div class="meta">cart from ' + esc(merchant) + "</div>" + items;
+}
+
 function renderApprovals(list) {
   var el = document.getElementById("approvals");
   if (!list.length) { el.innerHTML = '<p class="empty">No payments awaiting approval.</p>'; return; }
@@ -222,6 +234,7 @@ function renderApprovals(list) {
         esc(amt.currency) + '</span><span class="pill rail">' + esc(r.rail) + "</span></div>" +
       '<div class="meta">to ' + esc((r.payee && (r.payee.label || r.payee.address)) || "?") +
         (r.memo ? " · " + esc(r.memo) : "") + "</div>" +
+      renderCart(r.cart) +
       '<div class="meta">' + esc(a.reason) + "</div>" +
       '<div class="actions">' +
         '<button class="btn btn-ok" data-action="approve" data-id="' + esc(a.approvalId) + '">Approve</button>' +

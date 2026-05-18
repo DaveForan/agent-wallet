@@ -34,6 +34,41 @@ export interface Payee {
   category?: string;
 }
 
+/** One product line in a shopping cart. */
+export interface LineItem {
+  /** Stable identifier from the merchant's checkout session. */
+  id: string;
+  /** Human-readable product name. */
+  name: string;
+  /** Number of units. */
+  quantity: number;
+  /** Price of a single unit. */
+  unitPrice: Money;
+  /** Merchant category for this item — what category-scoped mandates check. */
+  category?: string;
+  /** Merchant SKU / product id, if known. */
+  sku?: string;
+}
+
+/**
+ * A shopping cart from an agentic-checkout merchant. It lets the wallet govern
+ * a purchase by *what is being bought*, not just the total — and the policy
+ * engine and approval UI reason over the line items.
+ *
+ * The wallet treats every field as the merchant's claim until it has verified
+ * the cart against the merchant's real checkout session (see the ACP client).
+ */
+export interface Cart {
+  /** The merchant's checkout-session id — the wallet's handle to verify it. */
+  sessionId: string;
+  /** Merchant identity. Verified by the wallet, never trusted from the agent. */
+  merchant: { id: string; name?: string };
+  /** The line items being purchased. */
+  lineItems: LineItem[];
+  /** The merchant-declared total (may include tax and fulfillment). */
+  total: Money;
+}
+
 /** A request from an agent to move money. The agent is an untrusted caller. */
 export interface PaymentRequest {
   id: string;
@@ -45,6 +80,8 @@ export interface PaymentRequest {
   memo?: string;
   /** The mandate this spend is drawn against, if any. */
   mandateId?: string;
+  /** The cart being purchased, for an agentic-checkout payment. */
+  cart?: Cart;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }

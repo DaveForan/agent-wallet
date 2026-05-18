@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 import { PolicyEngine, type PolicyContext } from "./policy.ts";
 import {
   money,
+  type Cart,
   type Mandate,
   type PaymentRequest,
   type PolicyConfig,
@@ -22,6 +23,25 @@ function req(over: Partial<PaymentRequest> = {}): PaymentRequest {
 
 function mandate(over: Partial<Mandate> = {}): Mandate {
   return { id: "m", grantedBy: "operator", cap: money(10_000, "USD"), ...over };
+}
+
+/** Build a cart from a compact line-item description. */
+function cart(
+  items: { category?: string }[],
+  total = 100,
+): Cart {
+  return {
+    sessionId: "s1",
+    merchant: { id: "merch-1", name: "Test Merchant" },
+    lineItems: items.map((it, n) => ({
+      id: `li${n}`,
+      name: `item ${n}`,
+      quantity: 1,
+      unitPrice: money(50, "USD"),
+      category: it.category,
+    })),
+    total: money(total, "USD"),
+  };
 }
 
 /** Run the policy engine and return just the outcome. */
@@ -269,6 +289,75 @@ describe("mandate constraints", () => {
         }),
         spentInWindow: money(450, "USD"),
       }),
+      "allow",
+    );
+  });
+});
+
+describe("cart-aware policy", () => {
+  const autonomous: PolicyConfig = { mode: "autonomous" };
+
+  test("allows a cart whose items are all in an allowed category", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{ category: "groceries" }, { category: "groceries" }]),
+        }),
+        { mandate: mandate({ allowedCategories: ["groceries"] }) },
+      ),
+      "allow",
+    );
+  });
+
+  test("denies a cart with a line item in a disallowed category", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{ category: "groceries" }, { category: "alcohol" }]),
+        }),
+        { mandate: mandate({ allowedCategories: ["groceries"] }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("denies a cart line item with no category when categories are restricted", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({ amount: money(100, "USD"), cart: cart([{}]) }),
+        { mandate: mandate({ allowedCategories: ["groceries"] }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("denies a cart whose total exceeds the authorized amount", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(80, "USD"),
+          cart: cart([{ category: "groceries" }], 100),
+        }),
+      ),
+      "deny",
+    );
+  });
+
+  test("allows a cart whose total is within the authorized amount", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{ category: "groceries" }], 100),
+        }),
+      ),
       "allow",
     );
   });
