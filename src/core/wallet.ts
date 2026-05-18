@@ -103,6 +103,8 @@ export class WalletDaemon {
   private readonly mandates: MandateStore;
   private readonly approvals: ApprovalStore;
   private readonly control: ControlState;
+  /** Per-mandate task chains — serialize spend decisions against each mandate. */
+  private readonly mandateChains = new Map<string, Promise<unknown>>();
 
   constructor(config: WalletConfig) {
     this.policy = new PolicyEngine(config.policy);
@@ -232,30 +234,44 @@ export class WalletDaemon {
       return { status: "denied", paymentId: request.id, reason: frozen };
     }
 
-    const decision = this.policy.evaluate(request, this.contextFor(request));
-    this.ledger.append("policy.decided", { decision }, request.id);
+    // Decide and settle under the mandate's lock, so the cap check and the
+    // settlement record are atomic — concurrent payments cannot race the cap.
+    return this.withMandateLock(
+      request.mandateId,
+      async (): Promise<PayResult> => {
+        const decision = this.policy.evaluate(
+          request,
+          this.contextFor(request),
+        );
+        this.ledger.append("policy.decided", { decision }, request.id);
 
-    if (decision.outcome === "deny") {
-      return { status: "denied", paymentId: request.id, reason: decision.reason };
-    }
+        if (decision.outcome === "deny") {
+          return {
+            status: "denied",
+            paymentId: request.id,
+            reason: decision.reason,
+          };
+        }
 
-    if (decision.outcome === "needs_approval") {
-      const approvalId = randomUUID();
-      this.approvals.put({ approvalId, request, reason: decision.reason });
-      this.ledger.append(
-        "approval.requested",
-        { approvalId, reason: decision.reason },
-        request.id,
-      );
-      return {
-        status: "pending_approval",
-        paymentId: request.id,
-        approvalId,
-        reason: decision.reason,
-      };
-    }
+        if (decision.outcome === "needs_approval") {
+          const approvalId = randomUUID();
+          this.approvals.put({ approvalId, request, reason: decision.reason });
+          this.ledger.append(
+            "approval.requested",
+            { approvalId, reason: decision.reason },
+            request.id,
+          );
+          return {
+            status: "pending_approval",
+            paymentId: request.id,
+            approvalId,
+            reason: decision.reason,
+          };
+        }
 
-    return this.settle(request);
+        return this.settle(request);
+      },
+    );
   }
 
   /** Resolve a pending approval. Approving it triggers settlement. */
@@ -278,13 +294,45 @@ export class WalletDaemon {
         reason: "approval rejected by human reviewer",
       };
     }
-    // A freeze applied while the approval was pending still blocks settlement.
-    const frozen = this.frozenReason();
-    if (frozen) {
-      this.ledger.append("payment.blocked", { reason: frozen }, pending.request.id);
-      return { status: "denied", paymentId: pending.request.id, reason: frozen };
-    }
-    return this.settle(pending.request);
+    return this.withMandateLock(
+      pending.request.mandateId,
+      async (): Promise<PayResult> => {
+        // A freeze applied while the approval waited still blocks settlement.
+        const frozen = this.frozenReason();
+        if (frozen) {
+          this.ledger.append(
+            "payment.blocked",
+            { reason: frozen },
+            pending.request.id,
+          );
+          return {
+            status: "denied",
+            paymentId: pending.request.id,
+            reason: frozen,
+          };
+        }
+        // Re-check policy with fresh state — spend may have accumulated while
+        // the approval waited. A hard denial (cap, window, revoked, expired)
+        // blocks it; the human's approval overrides only the autonomy tier.
+        const recheck = this.policy.evaluate(
+          pending.request,
+          this.contextFor(pending.request),
+        );
+        if (recheck.outcome === "deny") {
+          this.ledger.append(
+            "payment.blocked",
+            { reason: recheck.reason },
+            pending.request.id,
+          );
+          return {
+            status: "denied",
+            paymentId: pending.request.id,
+            reason: recheck.reason,
+          };
+        }
+        return this.settle(pending.request);
+      },
+    );
   }
 
   private async settle(request: PaymentRequest): Promise<PayResult> {
@@ -320,6 +368,29 @@ export class WalletDaemon {
       this.ledger.append("payment.failed", { reason }, request.id);
       return { status: "failed", paymentId: request.id, reason };
     }
+  }
+
+  /**
+   * Serialize work that decides and records spend against a mandate. Tasks
+   * for the same mandate run one at a time — so a payment's cap check and its
+   * settlement record are atomic, and concurrent payments cannot race the
+   * cap. Tasks for different mandates (or no mandate) are not held up.
+   */
+  private withMandateLock<T>(
+    mandateId: string | undefined,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    if (mandateId === undefined) return task();
+    const prior = this.mandateChains.get(mandateId) ?? Promise.resolve();
+    const result = prior.then(task, task);
+    this.mandateChains.set(
+      mandateId,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return result;
   }
 
   /** The rejection reason if the wallet is frozen, otherwise undefined. */
