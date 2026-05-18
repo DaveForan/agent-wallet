@@ -1,5 +1,12 @@
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { bigintReplacer } from "../core/types.ts";
@@ -134,4 +141,59 @@ export async function startStdioMcpServer(wallet: WalletDaemon): Promise<void> {
   const server = createWalletMcpServer(wallet);
   await server.connect(new StdioServerTransport());
   console.error("agent-wallet MCP server ready on stdio");
+}
+
+/**
+ * Serve the wallet's MCP server over Streamable HTTP at `POST /mcp`.
+ *
+ * Runs stateless: a fresh McpServer and transport are created per request,
+ * all closing over the one shared WalletDaemon. This is what lets the MCP
+ * surface run in the same process as the control and payment surfaces — every
+ * surface drives the same wallet.
+ */
+export function startHttpMcpServer(wallet: WalletDaemon, port = 4024): Server {
+  const server = createServer((req, res) => {
+    void handleHttpMcp(wallet, req, res);
+  });
+  server.listen(port, () => {
+    console.log(`agent-wallet MCP (HTTP) on http://localhost:${port}/mcp`);
+  });
+  return server;
+}
+
+async function handleHttpMcp(
+  wallet: WalletDaemon,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const path = new URL(req.url ?? "/", "http://localhost").pathname;
+  if (path !== "/mcp") {
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found — the MCP endpoint is /mcp" }));
+    return;
+  }
+
+  // Stateless: one server + transport per request, sharing the one wallet.
+  const mcp = createWalletMcpServer(wallet);
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  res.on("close", () => {
+    void transport.close();
+    void mcp.close();
+  });
+
+  try {
+    await mcp.connect(transport);
+    await transport.handleRequest(req, res);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
 }
