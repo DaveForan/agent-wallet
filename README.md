@@ -65,7 +65,8 @@ remain the default for tests and short-lived runs.
 ### Surfaces
 
 - **MCP server** — *deliberate* payments: the tools an agent explicitly calls.
-  Wired to `@modelcontextprotocol/sdk` over stdio (`npm run mcp`).
+  The daemon serves it over Streamable HTTP at `/mcp`; a stdio transport is
+  also available (`npm run mcp`) for stdio-only MCP hosts.
 - **x402 interceptor** — *ambient* payments: a `fetch` wrapper that satisfies
   HTTP 402 transparently, so the agent never spends reasoning on a micro-fee.
 - **Payment API** — `POST /pay` for non-MCP agents (`http-api.ts`).
@@ -100,24 +101,30 @@ account credentials to exercise (see below).
 
 ```bash
 npm install
+npm run daemon          # run the unified wallet daemon (all surfaces)
 npm run demo            # policy engine end-to-end: allow / deny / needs_approval
-npm run control         # run the wallet daemon — opens the control UI + APIs
-npm run mcp:check       # spawn the MCP server + a client, exercise the tools
-npm run mcp             # run the MCP server on stdio (for an MCP host)
+npm run daemon:check    # the daemon, end to end — one wallet across every surface
 npm run custody:address # generate the local keypair, print the funding address
 npm run x402:check      # real x402 payment on Base Sepolia (needs testnet USDC)
 npm run control:check   # durable storage + operator control plane, end to end
+npm run mcp:check       # exercise the MCP tools over a stdio transport
 npm run typecheck       # strict type-check
 npm run build           # emit to dist/
 ```
 
 ### Running the wallet daemon
 
-`npm run control` starts the wallet with durable SQLite storage and opens two
-HTTP surfaces from one process:
+`npm run daemon` starts the wallet with durable SQLite storage and serves
+**every surface from one process, over one shared wallet**:
 
-- **operator control plane + web UI** — `http://localhost:4023/`
+- **MCP server** (Streamable HTTP) — `http://localhost:4024/mcp`
 - **agent payment API** — `POST http://localhost:4022/pay`
+- **operator control plane + web UI** — `http://localhost:4023/`
+
+A wallet is single-writer by design — the spend-cap accounting must never be
+raced — so it runs in exactly one process. The agent (MCP or payment API) and
+the operator (control plane) therefore drive the *same* wallet: a mandate, a
+freeze and the ledger are all shared.
 
 On startup the daemon prints a control token (set `AGENT_WALLET_CONTROL_TOKEN`
 to pin your own) and a ready-to-open `…/?token=…` URL. Open it in a browser for
@@ -156,21 +163,20 @@ enabled on the account.
 
 ## Connecting it to Claude
 
-The MCP server is the agent-facing surface. Point an MCP host at it:
+Start the daemon, then point Claude at its MCP endpoint over HTTP:
 
-```jsonc
-{
-  "mcpServers": {
-    "agent-wallet": {
-      "command": "node",
-      "args": ["src/mcp-main.ts"],
-      "cwd": "/home/dave/Projects/agent-wallet"
-    }
-  }
-}
+```bash
+npm run daemon
+claude mcp add --transport http agent-wallet http://localhost:4024/mcp
 ```
 
-In Claude Code, from the repo root: `claude mcp add agent-wallet -- node src/mcp-main.ts`.
+This is the recommended path: Claude and the operator share the *one* wallet
+the daemon runs.
+
+**Stdio alternative.** For an MCP host that only speaks stdio, `npm run mcp`
+(`src/mcp-main.ts`) runs an MCP server over stdio — but as a *separate,
+standalone wallet*, not the daemon's. Use it only when HTTP transport is not an
+option.
 
 The agent gets three tools — `request_payment`, `get_payment_status`,
 `list_mandates`. It can *request* spend and *read* state; it deliberately has
@@ -179,10 +185,8 @@ live on the operator control API, a separate surface.
 
 ## Next steps
 
-1. Unify the process model — one daemon exposing the MCP surface alongside the
-   control plane and payment API, so an MCP agent and the operator share a
-   wallet.
-2. End-to-end verification of the CDP and Stripe paths against real accounts.
+1. End-to-end verification of the CDP and Stripe paths against real accounts.
+2. A durable signer for self-custody isolation, and rate-limited audit export.
 
 ## Protocol references
 
