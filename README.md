@@ -106,6 +106,7 @@ npm run demo            # policy engine end-to-end: allow / deny / needs_approva
 npm run daemon:check    # the daemon, end to end — one wallet across every surface
 npm run custody:address # generate the local keypair, print the funding address
 npm run x402:check      # real x402 payment on Base Sepolia (needs testnet USDC)
+npm run stripe:check    # issue a test virtual card (needs a Stripe test key)
 npm run control:check   # durable storage + operator control plane, end to end
 npm run mcp:check       # exercise the MCP tools over a stdio transport
 npm run typecheck       # strict type-check
@@ -147,19 +148,28 @@ Until the address holds USDC, `x402:check` runs the whole pipeline and stops
 at the facilitator with `insufficient_balance` — proof that quoting and
 signing work; only on-chain settlement needs funds.
 
-### Managed custody (Coinbase CDP)
+### Verifying managed custody (Coinbase CDP)
 
 `ManagedCustody` is a drop-in replacement for `LocalCustody` — the x402 rail
-needs no changes. It reads `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET` and
-`CDP_WALLET_SECRET` (created free in the [CDP Portal](https://portal.cdp.coinbase.com/)),
-resolves a CDP server account, and signs with the CDP-held key.
+needs no changes. To verify it end to end:
 
-### The Stripe rail (Issuing for agents)
+1. Create free API keys in the [CDP Portal](https://portal.cdp.coinbase.com/)
+   and export `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`.
+2. `AGENT_WALLET_CUSTODY=managed npm run custody:address` — prints the CDP
+   server account's address; fund it with Base Sepolia USDC (as above).
+3. `AGENT_WALLET_CUSTODY=managed npm run x402:check` — the same x402 test, now
+   signing through CDP. A real Base Sepolia payment confirms the CDP path.
+
+### Verifying the Stripe rail (Issuing for agents)
 
 `StripeRail.settle()` issues a single-use virtual card whose spend limit is
-locked to the authorized amount. It needs `STRIPE_SECRET_KEY` — use a
-**test-mode** key (`sk_test_...`) so no real money moves — with Issuing
-enabled on the account.
+locked to the authorized amount. To verify it:
+
+1. In a Stripe account, enable **Issuing** (test mode) and copy the test
+   secret key (`sk_test_...`).
+2. `STRIPE_SECRET_KEY=sk_test_... npm run stripe:check` — issues a $25 test
+   virtual card and prints a Stripe dashboard link. It skips cleanly with no
+   key, and refuses to run against a non-test key.
 
 ## Connecting it to Claude
 
