@@ -19,8 +19,9 @@
     "custody:address": "node src/custody-init.ts",
     "x402:resource": "node src/x402-test-resource.ts",
     "x402:check": "node src/x402-smoketest.ts",
-    "control": "node src/control-main.ts",
+    "daemon": "node src/daemon.ts",
     "control:check": "node src/control-smoketest.ts",
+    "daemon:check": "node src/daemon-smoketest.ts",
     "start": "node dist/index.js"
   },
   "keywords": [
