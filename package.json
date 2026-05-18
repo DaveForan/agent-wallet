@@ -12,8 +12,9 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "test": "node --test 'src/**/*.test.ts'",
     "demo": "node src/demo.ts",
-    "dev": "node --watch src/demo.ts",
+    "dev": "node --watch src/daemon.ts",
     "mcp": "node src/mcp-main.ts",
     "mcp:check": "node src/mcp-smoketest.ts",
     "custody:address": "node src/custody-init.ts",
@@ -23,7 +24,7 @@
     "daemon": "node src/daemon.ts",
     "control:check": "node src/control-smoketest.ts",
     "daemon:check": "node src/daemon-smoketest.ts",
-    "start": "node dist/index.js"
+    "start": "node src/daemon.ts"
   },
   "keywords": [
     "agent",
