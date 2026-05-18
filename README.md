@@ -102,6 +102,7 @@ account credentials to exercise (see below).
 ```bash
 npm install
 npm run daemon          # run the unified wallet daemon (all surfaces)
+npm test                # unit suite — policy engine, codec, concurrency, interceptor
 npm run demo            # policy engine end-to-end: allow / deny / needs_approval
 npm run daemon:check    # the daemon, end to end — one wallet across every surface
 npm run custody:address # generate the local keypair, print the funding address
@@ -193,10 +194,25 @@ The agent gets three tools — `request_payment`, `get_payment_status`,
 no tool to *approve* a payment, create a mandate, or lift a freeze — those
 live on the operator control API, a separate surface.
 
+## Known limitations
+
+These are deliberate boundaries of the first scope, not bugs:
+
+- **No cross-currency handling.** Each currency is its own scale; a mandate in
+  one currency cannot authorize a payment in another. The wallet escalates
+  such a payment rather than mis-comparing it — safe, but limited. There is no
+  FX or normalization.
+- **The ledger is append-only by convention, not cryptographically.** Nothing
+  in the code mutates or deletes events, but the SQLite file is not
+  hash-chained or otherwise tamper-evident. A reasonable v2 hardening.
+- **`LocalCustody` holds the signing key in the daemon's process.** For
+  stronger isolation use `ManagedCustody` (Coinbase CDP), where the key never
+  enters this process.
+
 ## Next steps
 
-1. End-to-end verification of the CDP and Stripe paths against real accounts.
-2. A durable signer for self-custody isolation, and rate-limited audit export.
+1. End-to-end verification of the CDP and Stripe paths against real accounts
+   (turnkey — see *Verifying* above).
 
 ## Protocol references
 
