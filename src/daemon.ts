@@ -19,6 +19,7 @@ import { AcpClient } from "./acp/acp-client.ts";
 import { money } from "./core/types.ts";
 import { WalletDaemon } from "./core/wallet.ts";
 import { LocalCustody } from "./custody/local-custody.ts";
+import { AcpCheckoutRail } from "./rails/acp-rail.ts";
 import { StripeRail } from "./rails/stripe-rail.ts";
 import { X402Rail } from "./rails/x402-rail.ts";
 import { openWalletDatabase } from "./storage/db.ts";
@@ -33,6 +34,12 @@ import { startHttpMcpServer } from "./surfaces/mcp-server.ts";
 
 const db = openWalletDatabase(process.env["AGENT_WALLET_DB"]);
 
+// The funding store and ACP client are shared: by the wallet config and by
+// the ACP rail, which mints tokens against the funding source and completes
+// checkout through the same client used to verify carts.
+const fundingStore = new SqliteFundingSourceStore(db);
+const acpClient = new AcpClient();
+
 const wallet = new WalletDaemon({
   policy: {
     mode: "tiered",
@@ -40,15 +47,19 @@ const wallet = new WalletDaemon({
     hardLimit: money(5000, "USD"), // never settle above $50.00
     requireMandate: true, // a payment with no mandate is escalated
   },
-  rails: [new X402Rail({ network: "base-sepolia" }), new StripeRail()],
+  rails: [
+    new X402Rail({ network: "base-sepolia" }),
+    new StripeRail(),
+    new AcpCheckoutRail({ fundingStore, acpClient }),
+  ],
   custody: new LocalCustody(),
   ledger: new SqliteLedger(db),
   mandates: new SqliteMandateStore(db),
   approvals: new SqliteApprovalStore(db),
   control: new SqliteControlState(db),
-  funding: new SqliteFundingSourceStore(db),
+  funding: fundingStore,
   // Carts are verified against the merchant's real ACP session before policy.
-  cartVerifier: new AcpClient(),
+  cartVerifier: acpClient,
 });
 
 const mcpPort = Number(process.env["AGENT_WALLET_MCP_PORT"] ?? 4024);

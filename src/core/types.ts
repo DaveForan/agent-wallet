@@ -15,7 +15,7 @@ export interface Money {
 }
 
 /** Identifier for a configured payment rail. */
-export type RailId = "x402" | "stripe";
+export type RailId = "x402" | "stripe" | "acp";
 
 /**
  * How the payment was initiated.
@@ -67,6 +67,8 @@ export interface Cart {
     name?: string;
     /** Base URL of the merchant's ACP checkout API, used to verify the cart. */
     acpEndpoint?: string;
+    /** The merchant's Stripe network business profile — the SPT seller scope. */
+    networkBusinessProfile?: string;
   };
   /** The line items being purchased. */
   lineItems: LineItem[];

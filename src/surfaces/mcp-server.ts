@@ -66,8 +66,11 @@ export function registerWalletTools(
         "cannot override that decision; a denial explains why so you can adjust.",
       inputSchema: {
         rail: z
-          .enum(["x402", "stripe"])
-          .describe("Payment rail: 'x402' for crypto, 'stripe' for card."),
+          .enum(["x402", "stripe", "acp"])
+          .describe(
+            "Payment rail: 'x402' crypto, 'stripe' virtual card, " +
+              "'acp' agentic checkout.",
+          ),
         amount: z
           .string()
           .regex(/^\d+$/, "must be an integer in minor units")

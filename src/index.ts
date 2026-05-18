@@ -29,6 +29,10 @@ export * from "./storage/sqlite-funding-store.ts";
 export * from "./rails/rail.ts";
 export { X402Rail, type X402Network, type X402RailOptions } from "./rails/x402-rail.ts";
 export { StripeRail, type StripeRailOptions } from "./rails/stripe-rail.ts";
+export {
+  AcpCheckoutRail,
+  type AcpCheckoutRailOptions,
+} from "./rails/acp-rail.ts";
 
 export * from "./custody/custody.ts";
 export { ManagedCustody, type ManagedCustodyOptions } from "./custody/managed-custody.ts";
