@@ -11,8 +11,12 @@ export * from "./core/mandates.ts";
 export * from "./core/approvals.ts";
 export * from "./core/control.ts";
 export * from "./core/funding.ts";
+export * from "./core/verification.ts";
 export * from "./core/policy.ts";
 export * from "./core/wallet.ts";
+
+export * from "./acp/types.ts";
+export * from "./acp/acp-client.ts";
 
 export * from "./storage/codec.ts";
 export * from "./storage/db.ts";

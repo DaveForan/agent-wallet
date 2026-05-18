@@ -15,6 +15,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { AcpClient } from "./acp/acp-client.ts";
 import { money } from "./core/types.ts";
 import { WalletDaemon } from "./core/wallet.ts";
 import { LocalCustody } from "./custody/local-custody.ts";
@@ -46,6 +47,8 @@ const wallet = new WalletDaemon({
   approvals: new SqliteApprovalStore(db),
   control: new SqliteControlState(db),
   funding: new SqliteFundingSourceStore(db),
+  // Carts are verified against the merchant's real ACP session before policy.
+  cartVerifier: new AcpClient(),
 });
 
 const mcpPort = Number(process.env["AGENT_WALLET_MCP_PORT"] ?? 4024);

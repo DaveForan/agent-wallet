@@ -62,7 +62,12 @@ export interface Cart {
   /** The merchant's checkout-session id — the wallet's handle to verify it. */
   sessionId: string;
   /** Merchant identity. Verified by the wallet, never trusted from the agent. */
-  merchant: { id: string; name?: string };
+  merchant: {
+    id: string;
+    name?: string;
+    /** Base URL of the merchant's ACP checkout API, used to verify the cart. */
+    acpEndpoint?: string;
+  };
   /** The line items being purchased. */
   lineItems: LineItem[];
   /** The merchant-declared total (may include tax and fulfillment). */

@@ -17,6 +17,7 @@ import {
   type FundingSourceStore,
 } from "./funding.ts";
 import { NotImplementedError, WalletError } from "./errors.ts";
+import type { CartVerifier } from "./verification.ts";
 import { InMemoryLedger, type Ledger } from "./ledger.ts";
 import { InMemoryMandateStore, type MandateStore } from "./mandates.ts";
 import { PolicyEngine, type PolicyContext } from "./policy.ts";
@@ -48,6 +49,11 @@ export interface WalletConfig {
   control?: ControlState;
   /** Funding-source store — the payment method tokens are minted against. */
   funding?: FundingSourceStore;
+  /**
+   * Verifies an agent-supplied cart against the merchant's real session
+   * before policy. Without one, a cart is taken as the agent states it.
+   */
+  cartVerifier?: CartVerifier;
 }
 
 /** What an agent supplies to ask for a payment; `id`/`createdAt` are filled in. */
@@ -111,6 +117,7 @@ export class WalletDaemon {
   private readonly approvals: ApprovalStore;
   private readonly control: ControlState;
   private readonly funding: FundingSourceStore;
+  private readonly cartVerifier: CartVerifier | undefined;
   /** Per-mandate task chains — serialize spend decisions against each mandate. */
   private readonly mandateChains = new Map<string, Promise<unknown>>();
 
@@ -123,6 +130,7 @@ export class WalletDaemon {
     this.approvals = config.approvals ?? new InMemoryApprovalStore();
     this.control = config.control ?? new InMemoryControlState();
     this.funding = config.funding ?? new InMemoryFundingSourceStore();
+    this.cartVerifier = config.cartVerifier;
   }
 
   /** The registered funding source, or undefined if none is set. */
@@ -262,6 +270,20 @@ export class WalletDaemon {
     if (frozen) {
       this.ledger.append("payment.blocked", { reason: frozen }, request.id);
       return { status: "denied", paymentId: request.id, reason: frozen };
+    }
+
+    // Replace an agent-supplied cart with the merchant's verified session
+    // before policy sees it — the agent's claimed cart is never trusted.
+    if (request.cart && this.cartVerifier) {
+      try {
+        request.cart = await this.cartVerifier.verify(request.cart);
+      } catch (err) {
+        const reason =
+          "cart verification failed: " +
+          (err instanceof Error ? err.message : String(err));
+        this.ledger.append("payment.blocked", { reason }, request.id);
+        return { status: "denied", paymentId: request.id, reason };
+      }
     }
 
     // Decide and settle under the mandate's lock, so the cap check and the
