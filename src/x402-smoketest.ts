@@ -13,9 +13,21 @@
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { bigintReplacer, money } from "./core/types.ts";
-import { WalletDaemon } from "./core/wallet.ts";
+import type { CustodyProvider } from "./custody/custody.ts";
 import { LocalCustody } from "./custody/local-custody.ts";
+import { ManagedCustody } from "./custody/managed-custody.ts";
+import { WalletDaemon } from "./core/wallet.ts";
 import { X402Rail } from "./rails/x402-rail.ts";
+
+/**
+ * Custody backend, selected by AGENT_WALLET_CUSTODY: "managed" uses Coinbase
+ * CDP (needs the CDP_* env vars), anything else uses the local keystore. This
+ * is how the CDP path is verified — the same test, a different signer.
+ */
+const custody: CustodyProvider =
+  process.env["AGENT_WALLET_CUSTODY"] === "managed"
+    ? new ManagedCustody()
+    : new LocalCustody();
 
 const PORT = 4021;
 const RESOURCE_URL = `http://localhost:${PORT}/paid`;
@@ -49,9 +61,10 @@ async function main(): Promise<void> {
     const wallet = new WalletDaemon({
       policy: { mode: "autonomous" },
       rails: [new X402Rail({ network: "base-sepolia" })],
-      custody: new LocalCustody(),
+      custody,
     });
 
+    console.log(`custody: ${custody.kind}`);
     console.log(`\npaying ${RESOURCE_URL}  (authorized ceiling: $1.00)\n`);
     const result = await wallet.pay({
       rail: "x402",
