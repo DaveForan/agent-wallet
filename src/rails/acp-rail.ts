@@ -138,10 +138,18 @@ export class AcpCheckoutRail implements PaymentRail {
       );
       const reference = order.order?.id ?? order.id ?? spt.id;
 
+      // Reconcile: record what the merchant actually charged. The SPT was
+      // scoped to the cart total, so the charge can never exceed it.
+      const charged = order.totals?.find((t) => t.type === "total");
+      const settledAmount: Money = charged
+        ? { amount: BigInt(charged.amount), currency: cart.total.currency }
+        : cart.total;
+
       return {
         settled: true,
         reference,
-        settledAmount: cart.total,
+        settledAmount,
+        order: { id: reference, sessionId: cart.sessionId },
         raw: { sptId: spt.id, orderId: reference, sessionId: cart.sessionId },
       };
     } catch (err) {

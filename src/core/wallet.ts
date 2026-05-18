@@ -88,6 +88,13 @@ export interface SpendReport {
     spent: string;
     revoked: boolean;
   }[];
+  /** Completed merchant orders, for reconciliation against the merchant. */
+  orders: {
+    orderId: string;
+    paymentId?: string;
+    amount: string;
+    currency: string;
+  }[];
 }
 
 /** Derive a human-readable reason from a rail's unsettled SettlementResult. */
@@ -198,6 +205,7 @@ export class WalletDaemon {
   report(): SpendReport {
     const payments = { settled: 0, failed: 0, denied: 0, blocked: 0 };
     const settled = new Map<string, bigint>();
+    const orders: SpendReport["orders"] = [];
     for (const event of this.ledger.history()) {
       switch (event.type) {
         case "payment.settled": {
@@ -208,6 +216,14 @@ export class WalletDaemon {
           if (result?.settled) {
             const { currency, amount } = result.settledAmount;
             settled.set(currency, (settled.get(currency) ?? 0n) + amount);
+            if (result.order) {
+              orders.push({
+                orderId: result.order.id,
+                paymentId: event.paymentId,
+                amount: amount.toString(),
+                currency,
+              });
+            }
           }
           break;
         }
@@ -244,6 +260,7 @@ export class WalletDaemon {
         spent: this.spentAgainstMandate(mandate, undefined).amount.toString(),
         revoked: mandate.revoked === true,
       })),
+      orders,
     };
   }
 

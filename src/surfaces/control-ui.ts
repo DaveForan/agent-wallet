@@ -265,12 +265,19 @@ function renderReport(rep) {
     return '<div class="stat"><span>settled · ' + esc(c) + '</span><span class="v">' +
       fmt(esc(ccy[c])) + "</span></div>";
   }).join("") || '<div class="stat"><span class="empty">nothing settled yet</span></div>';
+  var orders = rep.orders || [];
+  var orderRows = orders.map(function (o) {
+    return '<div class="meta">order ' + esc(o.orderId) + " · " +
+      fmt(esc(o.amount)) + " " + esc(o.currency) + "</div>";
+  }).join("");
   document.getElementById("report").innerHTML =
     '<div class="stat"><span>settled</span><span class="v">' + fmt(p.settled || 0) + "</span></div>" +
     '<div class="stat"><span>failed</span><span class="v">' + fmt(p.failed || 0) + "</span></div>" +
     '<div class="stat"><span>denied</span><span class="v">' + fmt(p.denied || 0) + "</span></div>" +
     '<div class="stat"><span>blocked by freeze</span><span class="v">' + fmt(p.blocked || 0) + "</span></div>" +
-    ccyRows;
+    ccyRows +
+    '<div class="stat"><span>merchant orders</span><span class="v">' + fmt(orders.length) + "</span></div>" +
+    orderRows;
 }
 
 function renderMandates(list, rep) {

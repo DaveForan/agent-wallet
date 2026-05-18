@@ -35,4 +35,6 @@ export interface AcpOrderResult {
   id?: string;
   status?: string;
   order?: { id?: string; status?: string };
+  /** The completed session's totals — used to reconcile the charged amount. */
+  totals?: AcpTotal[];
 }

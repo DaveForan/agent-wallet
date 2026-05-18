@@ -60,6 +60,7 @@ const settlingRail: PaymentRail = {
       settled: true,
       reference: "test-settlement",
       settledAmount: req.amount,
+      order: { id: `ord-${req.id}`, sessionId: "sess-test" },
     }),
 };
 
@@ -213,6 +214,10 @@ async function main(): Promise<void> {
       typeof report.generatedAt === "string" &&
         Array.isArray(report.mandates) &&
         report.mandates.length === 3,
+    );
+    check(
+      "GET /report reconciles settled payments to merchant orders",
+      Array.isArray(report.orders) && report.orders.length === 2,
     );
 
     const uiRes = await fetch(`http://localhost:${PORT}/`);

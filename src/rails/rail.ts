@@ -20,6 +20,11 @@ export interface SettlementResult {
   reference: string;
   /** What was actually moved. */
   settledAmount: Money;
+  /**
+   * A merchant order, when the payment completed an agentic checkout — the
+   * first-class record an operator reconciles against the merchant's books.
+   */
+  order?: { id: string; sessionId?: string };
   /** Raw rail response, kept for the audit ledger. */
   raw?: unknown;
 }
