@@ -32,6 +32,30 @@ export class AcpClient implements CartVerifier {
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
+  /** Create a checkout session with a merchant (the agent builds the cart). */
+  async createSession(
+    endpoint: string,
+    request: unknown,
+  ): Promise<AcpCheckoutSession> {
+    const res = await this.fetchImpl(
+      `${trimSlash(endpoint)}/checkout_sessions`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          "API-Version": this.specVersion,
+          "Idempotency-Key": randomUUID(),
+        },
+        body: JSON.stringify(request),
+      },
+    );
+    if (!res.ok) {
+      throw new WalletError(`ACP create-session: HTTP ${res.status}`);
+    }
+    return (await res.json()) as AcpCheckoutSession;
+  }
+
   /** Fetch a merchant's checkout session. */
   async getSession(
     endpoint: string,

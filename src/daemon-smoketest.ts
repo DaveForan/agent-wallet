@@ -102,6 +102,11 @@ async function main(): Promise<void> {
       "MCP-over-HTTP advertises the wallet tools",
       tools.tools.some((t) => t.name === "request_payment"),
     );
+    check(
+      "MCP advertises the agentic-checkout tools",
+      tools.tools.some((t) => t.name === "acp_create_checkout") &&
+        tools.tools.some((t) => t.name === "pay_checkout"),
+    );
 
     // The operator creates a mandate via the control API...
     await control("POST", "/mandates", {

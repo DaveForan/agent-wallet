@@ -74,7 +74,7 @@ const controlToken =
   process.env["AGENT_WALLET_CONTROL_TOKEN"] ??
   randomBytes(24).toString("base64url");
 
-startHttpMcpServer(wallet, mcpPort);
+startHttpMcpServer(wallet, mcpPort, acpClient);
 startHttpServer(wallet, payPort);
 startControlServer(wallet, controlPort, controlToken);
 

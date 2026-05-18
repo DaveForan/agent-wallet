@@ -9,6 +9,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import type { AcpClient } from "../acp/acp-client.ts";
 import { bigintReplacer } from "../core/types.ts";
 import type { PayResult, WalletDaemon } from "../core/wallet.ts";
 
@@ -55,6 +56,7 @@ function summarize(result: PayResult): string {
 export function registerWalletTools(
   server: McpServer,
   wallet: WalletDaemon,
+  acpClient?: AcpClient,
 ): void {
   server.registerTool(
     "request_payment",
@@ -125,12 +127,126 @@ export function registerWalletTools(
     },
     async () => textResult(wallet.listMandates()),
   );
+
+  if (acpClient) registerAcpTools(server, wallet, acpClient);
+}
+
+/**
+ * Register the agentic-checkout tools — the agent builds a cart with an ACP
+ * merchant, then hands the session to the wallet to verify and pay.
+ */
+function registerAcpTools(
+  server: McpServer,
+  wallet: WalletDaemon,
+  acp: AcpClient,
+): void {
+  server.registerTool(
+    "acp_create_checkout",
+    {
+      title: "Create an agentic checkout",
+      description:
+        "Open a checkout session with an ACP merchant for the chosen items. " +
+        "Returns the session id, line items and total — then use pay_checkout.",
+      inputSchema: {
+        merchantEndpoint: z
+          .string()
+          .url()
+          .describe("Base URL of the merchant's ACP checkout API."),
+        currency: z.string().min(1).describe('e.g. "USD".'),
+        items: z
+          .array(
+            z.object({
+              itemId: z.string().describe("The merchant's product/SKU id."),
+              quantity: z.number().int().positive(),
+            }),
+          )
+          .min(1)
+          .describe("The items to put in the cart."),
+        buyerEmail: z.string().optional().describe("Buyer contact email."),
+      },
+    },
+    async (args) => {
+      const session = await acp.createSession(args.merchantEndpoint, {
+        currency: args.currency,
+        line_items: args.items.map((it) => ({
+          item: { id: it.itemId },
+          quantity: it.quantity,
+        })),
+        buyer: { email: args.buyerEmail ?? "agent@agent-wallet.local" },
+      });
+      return textResult(session);
+    },
+  );
+
+  server.registerTool(
+    "acp_checkout_status",
+    {
+      title: "Get an agentic checkout's status",
+      description: "Fetch the current state of an ACP checkout session.",
+      inputSchema: {
+        merchantEndpoint: z.string().url(),
+        sessionId: z.string().min(1),
+      },
+    },
+    async (args) =>
+      textResult(await acp.getSession(args.merchantEndpoint, args.sessionId)),
+  );
+
+  server.registerTool(
+    "pay_checkout",
+    {
+      title: "Pay an agentic checkout",
+      description:
+        "Pay a merchant's ACP checkout session. The wallet re-fetches and " +
+        "verifies the session, runs policy, and settles — the outcome is " +
+        "'settled', 'denied' or 'pending_approval'.",
+      inputSchema: {
+        merchantEndpoint: z.string().url(),
+        merchantId: z.string().min(1),
+        merchantName: z.string().optional(),
+        sessionId: z.string().min(1).describe("The checkout session to pay."),
+        maxAmount: z
+          .string()
+          .regex(/^\d+$/, "must be an integer in minor units")
+          .describe("Authorized ceiling, in minor units."),
+        currency: z.string().min(1),
+        mandateId: z.string().optional(),
+        memo: z.string().optional(),
+      },
+    },
+    async (args) => {
+      // The cart is just a pointer — the wallet replaces it with the
+      // merchant's verified session before policy sees it.
+      const result = await wallet.pay({
+        rail: "acp",
+        channel: "deliberate",
+        amount: { amount: BigInt(args.maxAmount), currency: args.currency },
+        payee: { address: args.merchantId, label: args.merchantName },
+        memo: args.memo,
+        mandateId: args.mandateId,
+        cart: {
+          sessionId: args.sessionId,
+          merchant: {
+            id: args.merchantId,
+            name: args.merchantName,
+            acpEndpoint: args.merchantEndpoint,
+          },
+          lineItems: [],
+          total: { amount: 0n, currency: args.currency },
+        },
+      });
+      return textResult({ summary: summarize(result), result });
+    },
+  );
 }
 
 /** Build an McpServer with the wallet's tools registered. */
-export function createWalletMcpServer(wallet: WalletDaemon): McpServer {
+export function createWalletMcpServer(
+  wallet: WalletDaemon,
+  acpClient?: AcpClient,
+): McpServer {
   const server = new McpServer(SERVER_INFO);
-  registerWalletTools(server, wallet);
+  registerWalletTools(server, wallet, acpClient);
   return server;
 }
 
@@ -140,8 +256,11 @@ export function createWalletMcpServer(wallet: WalletDaemon): McpServer {
  * Logs go to stderr — stdout is reserved for the JSON-RPC message stream and
  * must not be written to directly.
  */
-export async function startStdioMcpServer(wallet: WalletDaemon): Promise<void> {
-  const server = createWalletMcpServer(wallet);
+export async function startStdioMcpServer(
+  wallet: WalletDaemon,
+  acpClient?: AcpClient,
+): Promise<void> {
+  const server = createWalletMcpServer(wallet, acpClient);
   await server.connect(new StdioServerTransport());
   console.error("agent-wallet MCP server ready on stdio");
 }
@@ -154,9 +273,13 @@ export async function startStdioMcpServer(wallet: WalletDaemon): Promise<void> {
  * surface run in the same process as the control and payment surfaces — every
  * surface drives the same wallet.
  */
-export function startHttpMcpServer(wallet: WalletDaemon, port = 4024): Server {
+export function startHttpMcpServer(
+  wallet: WalletDaemon,
+  port = 4024,
+  acpClient?: AcpClient,
+): Server {
   const server = createServer((req, res) => {
-    void handleHttpMcp(wallet, req, res);
+    void handleHttpMcp(wallet, acpClient, req, res);
   });
   server.listen(port, () => {
     console.log(`agent-wallet MCP (HTTP) on http://localhost:${port}/mcp`);
@@ -166,6 +289,7 @@ export function startHttpMcpServer(wallet: WalletDaemon, port = 4024): Server {
 
 async function handleHttpMcp(
   wallet: WalletDaemon,
+  acpClient: AcpClient | undefined,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -177,7 +301,7 @@ async function handleHttpMcp(
   }
 
   // Stateless: one server + transport per request, sharing the one wallet.
-  const mcp = createWalletMcpServer(wallet);
+  const mcp = createWalletMcpServer(wallet, acpClient);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
