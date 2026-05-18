@@ -100,6 +100,17 @@ export class PolicyEngine {
       return deny(`payee ${req.payee.address} is not on the mandate allowlist`);
     }
 
+    if (
+      mandate.allowedMerchants?.length &&
+      req.cart &&
+      !mandate.allowedMerchants.includes(req.cart.merchant.id)
+    ) {
+      return deny(
+        `merchant ${req.cart.merchant.id} is not on the mandate's merchant ` +
+          `allowlist`,
+      );
+    }
+
     if (mandate.allowedCategories?.length) {
       const allowed = mandate.allowedCategories;
       if (req.cart) {
@@ -120,6 +131,36 @@ export class PolicyEngine {
         return deny(
           `payee category "${req.payee.category ?? "unknown"}" is not permitted`,
         );
+      }
+    }
+
+    if (mandate.blockedCategories?.length) {
+      const blocked = mandate.blockedCategories;
+      if (req.cart) {
+        for (const item of req.cart.lineItems) {
+          if (item.category && blocked.includes(item.category)) {
+            return deny(
+              `cart item "${item.name}" is in a blocked category ` +
+                `("${item.category}")`,
+            );
+          }
+        }
+      } else if (req.payee.category && blocked.includes(req.payee.category)) {
+        return deny(`payee category "${req.payee.category}" is blocked`);
+      }
+    }
+
+    if (mandate.perItemCap && req.cart) {
+      const perItem = mandate.perItemCap;
+      for (const item of req.cart.lineItems) {
+        const cmp = compareMoney(item.unitPrice, perItem);
+        if (cmp === undefined || cmp > 0) {
+          return deny(
+            `cart item "${item.name}" unit price ` +
+              `${formatMoney(item.unitPrice)} exceeds the per-item cap of ` +
+              formatMoney(perItem),
+          );
+        }
       }
     }
 

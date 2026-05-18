@@ -247,6 +247,15 @@ function parseMandate(raw: unknown): Mandate {
   if (Array.isArray(r["allowedCategories"])) {
     mandate.allowedCategories = r["allowedCategories"] as string[];
   }
+  if (Array.isArray(r["allowedMerchants"])) {
+    mandate.allowedMerchants = r["allowedMerchants"] as string[];
+  }
+  if (Array.isArray(r["blockedCategories"])) {
+    mandate.blockedCategories = r["blockedCategories"] as string[];
+  }
+  if (r["perItemCap"] !== undefined) {
+    mandate.perItemCap = parseMoney(r["perItemCap"]);
+  }
   if (r["expiresAt"] !== undefined) {
     mandate.expiresAt = String(r["expiresAt"]);
   }

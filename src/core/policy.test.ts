@@ -27,17 +27,18 @@ function mandate(over: Partial<Mandate> = {}): Mandate {
 
 /** Build a cart from a compact line-item description. */
 function cart(
-  items: { category?: string }[],
+  items: { category?: string; price?: number }[],
   total = 100,
+  merchantId = "merch-1",
 ): Cart {
   return {
     sessionId: "s1",
-    merchant: { id: "merch-1", name: "Test Merchant" },
+    merchant: { id: merchantId, name: "Test Merchant" },
     lineItems: items.map((it, n) => ({
       id: `li${n}`,
       name: `item ${n}`,
       quantity: 1,
-      unitPrice: money(50, "USD"),
+      unitPrice: money(it.price ?? 50, "USD"),
       category: it.category,
     })),
     total: money(total, "USD"),
@@ -357,6 +358,78 @@ describe("cart-aware policy", () => {
           amount: money(100, "USD"),
           cart: cart([{ category: "groceries" }], 100),
         }),
+      ),
+      "allow",
+    );
+  });
+
+  test("allows a cart from an allowlisted merchant", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({ amount: money(100, "USD"), cart: cart([{}], 100, "grocer-1") }),
+        { mandate: mandate({ allowedMerchants: ["grocer-1"] }) },
+      ),
+      "allow",
+    );
+  });
+
+  test("denies a cart from a merchant not on the allowlist", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({ amount: money(100, "USD"), cart: cart([{}], 100, "other-store") }),
+        { mandate: mandate({ allowedMerchants: ["grocer-1"] }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("denies a cart with a line item in a blocked category", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{ category: "groceries" }, { category: "alcohol" }]),
+        }),
+        { mandate: mandate({ blockedCategories: ["alcohol"] }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("allows a cart with no blocked-category items", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{ category: "groceries" }]),
+        }),
+        { mandate: mandate({ blockedCategories: ["alcohol"] }) },
+      ),
+      "allow",
+    );
+  });
+
+  test("denies a cart line item over the per-item cap", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({ amount: money(1000, "USD"), cart: cart([{ price: 600 }], 600) }),
+        { mandate: mandate({ perItemCap: money(500, "USD") }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("allows a cart whose line items are within the per-item cap", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({ amount: money(1000, "USD"), cart: cart([{ price: 400 }], 400) }),
+        { mandate: mandate({ perItemCap: money(500, "USD") }) },
       ),
       "allow",
     );

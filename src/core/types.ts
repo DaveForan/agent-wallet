@@ -113,6 +113,12 @@ export interface Mandate {
   allowedPayees?: string[];
   /** Allowed merchant categories. Undefined/empty means any category. */
   allowedCategories?: string[];
+  /** Merchants (by cart merchant id) this mandate may buy from. Empty = any. */
+  allowedMerchants?: string[];
+  /** Categories never permitted — checked per cart line item (e.g. alcohol). */
+  blockedCategories?: string[];
+  /** Ceiling on any single cart line item's unit price. */
+  perItemCap?: Money;
   /** ISO-8601 expiry. Undefined means no expiry. */
   expiresAt?: string;
   /** Set true to permanently disable the mandate. */
