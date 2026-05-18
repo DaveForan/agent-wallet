@@ -22,6 +22,7 @@ import type { PaymentRail } from "./rails/rail.ts";
 import { openWalletDatabase } from "./storage/db.ts";
 import { SqliteApprovalStore } from "./storage/sqlite-approval-store.ts";
 import { SqliteControlState } from "./storage/sqlite-control-state.ts";
+import { SqliteFundingSourceStore } from "./storage/sqlite-funding-store.ts";
 import { SqliteLedger } from "./storage/sqlite-ledger.ts";
 import { SqliteMandateStore } from "./storage/sqlite-mandate-store.ts";
 import { startControlServer } from "./surfaces/control-api.ts";
@@ -72,6 +73,7 @@ function buildWallet(db: DatabaseSync): WalletDaemon {
     mandates: new SqliteMandateStore(db),
     approvals: new SqliteApprovalStore(db),
     control: new SqliteControlState(db),
+    funding: new SqliteFundingSourceStore(db),
   });
 }
 
@@ -221,6 +223,27 @@ async function main(): Promise<void> {
         uiHtml.includes("agent-wallet") &&
         uiHtml.includes("Approval queue"),
     );
+
+    const noFunding = await api("GET", "/funding-source");
+    check("a fresh wallet has no funding source", noFunding.registered === false);
+
+    const registered = await api("POST", "/funding-source", {
+      paymentMethodId: "pm_test_123",
+      brand: "visa",
+      last4: "4242",
+      label: "test card",
+    });
+    check(
+      "POST /funding-source registers a funding source",
+      registered.registered === true && registered.last4 === "4242",
+    );
+    check(
+      "the funding-source view does not echo the payment method id",
+      registered["paymentMethodId"] === undefined,
+    );
+
+    const cleared = await api("DELETE", "/funding-source");
+    check("DELETE /funding-source removes it", cleared.registered === false);
 
     console.log("\nfinal report:");
     console.log(

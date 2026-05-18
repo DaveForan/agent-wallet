@@ -32,6 +32,9 @@ import {
  *   POST /approvals/:id/resolve      approve / reject  ({ approved: bool })
  *   POST /freeze                     freeze the wallet  ({ reason })
  *   POST /unfreeze                   lift the freeze
+ *   GET  /funding-source             the registered funding source
+ *   POST /funding-source             register one  ({ paymentMethodId, ... })
+ *   DELETE /funding-source           remove it
  */
 export async function routeControlRequest(
   wallet: WalletDaemon,
@@ -123,7 +126,44 @@ export async function routeControlRequest(
     return { status: 200, body: wallet.controlStatus() };
   }
 
+  if (method === "GET" && path === "/funding-source") {
+    return { status: 200, body: fundingView(wallet) };
+  }
+
+  if (method === "POST" && path === "/funding-source") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    if (!b["paymentMethodId"]) {
+      return { status: 400, body: { error: "paymentMethodId is required" } };
+    }
+    wallet.registerFundingSource({
+      paymentMethodId: String(b["paymentMethodId"]),
+      brand: b["brand"] === undefined ? undefined : String(b["brand"]),
+      last4: b["last4"] === undefined ? undefined : String(b["last4"]),
+      label: b["label"] === undefined ? undefined : String(b["label"]),
+      addedAt: new Date().toISOString(),
+    });
+    return { status: 201, body: fundingView(wallet) };
+  }
+
+  if (method === "DELETE" && path === "/funding-source") {
+    wallet.clearFundingSource();
+    return { status: 200, body: fundingView(wallet) };
+  }
+
   return notFound(`route ${method} ${path}`);
+}
+
+/** The funding source as shown to the operator — the `pm_` id is not echoed. */
+function fundingView(wallet: WalletDaemon): Record<string, unknown> {
+  const source = wallet.fundingSource();
+  if (!source) return { registered: false };
+  return {
+    registered: true,
+    brand: source.brand,
+    last4: source.last4,
+    label: source.label,
+    addedAt: source.addedAt,
+  };
 }
 
 /**

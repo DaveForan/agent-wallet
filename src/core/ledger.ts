@@ -17,7 +17,9 @@ export type LedgerEventType =
   | "mandate.created"
   | "mandate.revoked"
   | "wallet.frozen"
-  | "wallet.unfrozen";
+  | "wallet.unfrozen"
+  | "funding.registered"
+  | "funding.cleared";
 
 export interface LedgerEvent {
   /** Monotonic sequence number, unique and ordered. */

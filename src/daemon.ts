@@ -23,6 +23,7 @@ import { X402Rail } from "./rails/x402-rail.ts";
 import { openWalletDatabase } from "./storage/db.ts";
 import { SqliteApprovalStore } from "./storage/sqlite-approval-store.ts";
 import { SqliteControlState } from "./storage/sqlite-control-state.ts";
+import { SqliteFundingSourceStore } from "./storage/sqlite-funding-store.ts";
 import { SqliteLedger } from "./storage/sqlite-ledger.ts";
 import { SqliteMandateStore } from "./storage/sqlite-mandate-store.ts";
 import { startControlServer } from "./surfaces/control-api.ts";
@@ -44,6 +45,7 @@ const wallet = new WalletDaemon({
   mandates: new SqliteMandateStore(db),
   approvals: new SqliteApprovalStore(db),
   control: new SqliteControlState(db),
+  funding: new SqliteFundingSourceStore(db),
 });
 
 const mcpPort = Number(process.env["AGENT_WALLET_MCP_PORT"] ?? 4024);

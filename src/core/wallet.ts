@@ -11,6 +11,11 @@ import {
   type ControlState,
   type FreezeStatus,
 } from "./control.ts";
+import {
+  InMemoryFundingSourceStore,
+  type FundingSource,
+  type FundingSourceStore,
+} from "./funding.ts";
 import { NotImplementedError, WalletError } from "./errors.ts";
 import { InMemoryLedger, type Ledger } from "./ledger.ts";
 import { InMemoryMandateStore, type MandateStore } from "./mandates.ts";
@@ -41,6 +46,8 @@ export interface WalletConfig {
   approvals?: ApprovalStore;
   /** Freeze / kill-switch state. Defaults to in-memory. */
   control?: ControlState;
+  /** Funding-source store — the payment method tokens are minted against. */
+  funding?: FundingSourceStore;
 }
 
 /** What an agent supplies to ask for a payment; `id`/`createdAt` are filled in. */
@@ -103,6 +110,7 @@ export class WalletDaemon {
   private readonly mandates: MandateStore;
   private readonly approvals: ApprovalStore;
   private readonly control: ControlState;
+  private readonly funding: FundingSourceStore;
   /** Per-mandate task chains — serialize spend decisions against each mandate. */
   private readonly mandateChains = new Map<string, Promise<unknown>>();
 
@@ -114,6 +122,28 @@ export class WalletDaemon {
     this.mandates = config.mandates ?? new InMemoryMandateStore();
     this.approvals = config.approvals ?? new InMemoryApprovalStore();
     this.control = config.control ?? new InMemoryControlState();
+    this.funding = config.funding ?? new InMemoryFundingSourceStore();
+  }
+
+  /** The registered funding source, or undefined if none is set. */
+  fundingSource(): FundingSource | undefined {
+    return this.funding.get();
+  }
+
+  /** Register (or replace) the payment method tokens are minted against. */
+  registerFundingSource(source: FundingSource): void {
+    this.funding.set(source);
+    this.ledger.append("funding.registered", {
+      brand: source.brand,
+      last4: source.last4,
+      label: source.label,
+    });
+  }
+
+  /** Remove the registered funding source. */
+  clearFundingSource(): void {
+    this.funding.clear();
+    this.ledger.append("funding.cleared", {});
   }
 
   /** Freeze the wallet — every payment is rejected until it is unfrozen. */

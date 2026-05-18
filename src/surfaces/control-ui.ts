@@ -125,6 +125,21 @@ export const CONTROL_UI_HTML = `<!doctype html>
       <h2 id="h-report">Spend report</h2>
       <div id="report"></div>
     </section>
+    <section class="card span2" aria-labelledby="h-funding">
+      <h2 id="h-funding">Funding source</h2>
+      <div id="funding"></div>
+      <form id="new-funding" style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="field grow"><label for="f-pm">Stripe payment method id</label>
+          <input id="f-pm" placeholder="pm_..." required style="width:100%"></div>
+        <div class="field"><label for="f-brand">brand</label>
+          <input id="f-brand" placeholder="visa" style="width:90px"></div>
+        <div class="field"><label for="f-last4">last 4</label>
+          <input id="f-last4" placeholder="4242" style="width:80px"></div>
+        <div class="field grow"><label for="f-label">label</label>
+          <input id="f-label" placeholder="personal card" style="width:100%"></div>
+        <div class="field"><button class="btn btn-primary" type="submit">Register</button></div>
+      </form>
+    </section>
     <section class="card span2" aria-labelledby="h-mandates">
       <h2 id="h-mandates">Mandates</h2>
       <div id="mandates"></div>
@@ -296,6 +311,19 @@ function renderAudit(list) {
   el.innerHTML = '<table class="audit"><tbody>' + rows + "</tbody></table>";
 }
 
+function renderFunding(f) {
+  var el = document.getElementById("funding");
+  if (!f || !f.registered) {
+    el.innerHTML = '<p class="empty">No funding source — register one below to enable card payments.</p>';
+    return;
+  }
+  el.innerHTML =
+    '<div class="meta">' +
+    esc((f.brand || "card") + " ••" + (f.last4 || "????")) +
+    (f.label ? " · " + esc(f.label) : "") + "</div>" +
+    '<div class="actions"><button class="btn btn-danger" data-action="clear-funding">Remove</button></div>';
+}
+
 async function refresh() {
   try {
     var status = await j("GET", "/status");
@@ -303,11 +331,13 @@ async function refresh() {
     var mandates = await j("GET", "/mandates");
     var approvals = await j("GET", "/approvals");
     var audit = await j("GET", "/audit");
+    var funding = await j("GET", "/funding-source");
     renderBanner(status);
     renderApprovals(approvals);
     renderReport(report);
     renderMandates(mandates, report);
     renderAudit(audit);
+    renderFunding(funding);
     setErr("");
   } catch (e) {
     setErr(String(e.message || e));
@@ -341,6 +371,10 @@ document.addEventListener("click", function (ev) {
     if (confirm("Revoke mandate " + id + "?")) {
       act(function () { return j("POST", "/mandates/" + id + "/revoke"); });
     }
+  } else if (action === "clear-funding") {
+    if (confirm("Remove the funding source?")) {
+      act(function () { return j("DELETE", "/funding-source"); });
+    }
   }
 });
 
@@ -363,6 +397,21 @@ document.getElementById("new-mandate").addEventListener("submit", function (ev) 
   act(function () {
     return j("POST", "/mandates", mandate).then(function () {
       document.getElementById("new-mandate").reset();
+    });
+  });
+});
+
+document.getElementById("new-funding").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  var source = {
+    paymentMethodId: document.getElementById("f-pm").value.trim(),
+    brand: document.getElementById("f-brand").value.trim() || undefined,
+    last4: document.getElementById("f-last4").value.trim() || undefined,
+    label: document.getElementById("f-label").value.trim() || undefined
+  };
+  act(function () {
+    return j("POST", "/funding-source", source).then(function () {
+      document.getElementById("new-funding").reset();
     });
   });
 });

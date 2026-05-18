@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS wallet_control (
   freeze_reason TEXT,
   changed_at    TEXT
 );
+
+CREATE TABLE IF NOT EXISTS funding_source (
+  id   INTEGER PRIMARY KEY CHECK (id = 1),
+  data TEXT
+);
 `;
 
 /**
@@ -53,9 +58,12 @@ export function openWalletDatabase(path: string = DEFAULT_DB_PATH): DatabaseSync
   // WAL lets readers (status, reports) run while a payment is being written.
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
-  // The control table holds exactly one row; ensure it exists.
+  // The control and funding tables each hold exactly one row; ensure they exist.
   db.prepare(
     "INSERT OR IGNORE INTO wallet_control (id, frozen) VALUES (1, 0)",
+  ).run();
+  db.prepare(
+    "INSERT OR IGNORE INTO funding_source (id, data) VALUES (1, NULL)",
   ).run();
   return db;
 }
