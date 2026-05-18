@@ -302,7 +302,13 @@ export class WalletDaemon {
         this.ledger.append("payment.failed", { settlement }, request.id);
         return { status: "failed", paymentId: request.id, reason };
       }
-      this.ledger.append("payment.settled", { settlement }, request.id);
+      // mandateId is recorded on the settled event itself, so spend-against-
+      // mandate is a single indexed read — no per-payment trail lookup.
+      this.ledger.append(
+        "payment.settled",
+        { settlement, mandateId: request.mandateId },
+        request.id,
+      );
       return { status: "settled", paymentId: request.id, settlement };
     } catch (err) {
       const reason =
@@ -346,18 +352,18 @@ export class WalletDaemon {
     sinceMs: number | undefined,
   ): Money {
     let total: Money = { amount: 0n, currency: mandate.cap.currency };
-    for (const event of this.ledger.history()) {
-      if (event.type !== "payment.settled") continue;
-      if (sinceMs !== undefined && Date.parse(event.at) < sinceMs) continue;
+    const sinceIso =
+      sinceMs === undefined ? undefined : new Date(sinceMs).toISOString();
 
-      const settlement = event.data["settlement"] as SettlementResult | undefined;
+    // One indexed pass over payment.settled events: the mandateId is recorded
+    // on the event itself, so there is no per-payment trail lookup.
+    for (const event of this.ledger.eventsByType("payment.settled", sinceIso)) {
+      if (event.data["mandateId"] !== mandate.id) continue;
+
+      const settlement = event.data["settlement"] as
+        | SettlementResult
+        | undefined;
       if (!settlement?.settled) continue;
-
-      // Only count payments whose original request named this mandate.
-      const trail = this.ledger.history(event.paymentId);
-      const requested = trail.find((e) => e.type === "payment.requested");
-      const req = requested?.data["request"] as PaymentRequest | undefined;
-      if (req?.mandateId !== mandate.id) continue;
       if (settlement.settledAmount.currency !== total.currency) continue;
 
       total = addMoney(total, settlement.settledAmount);

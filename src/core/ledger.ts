@@ -39,6 +39,12 @@ export interface Ledger {
   ): LedgerEvent;
   /** All events, or just those for one payment when `paymentId` is given. */
   history(paymentId?: string): LedgerEvent[];
+  /**
+   * Events of one type, optionally only those at or after `sinceIso` (an
+   * ISO-8601 timestamp). A durable backend can answer this from an index;
+   * it keeps hot-path reads off a full ledger scan.
+   */
+  eventsByType(type: LedgerEventType, sinceIso?: string): LedgerEvent[];
 }
 
 /** Development ledger. Events live in process memory and are lost on restart. */
@@ -65,5 +71,12 @@ export class InMemoryLedger implements Ledger {
   history(paymentId?: string): LedgerEvent[] {
     if (paymentId === undefined) return [...this.events];
     return this.events.filter((e) => e.paymentId === paymentId);
+  }
+
+  eventsByType(type: LedgerEventType, sinceIso?: string): LedgerEvent[] {
+    return this.events.filter(
+      (e) =>
+        e.type === type && (sinceIso === undefined || e.at >= sinceIso),
+    );
   }
 }

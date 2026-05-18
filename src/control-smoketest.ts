@@ -18,6 +18,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { money, type Mandate } from "./core/types.ts";
 import { WalletDaemon } from "./core/wallet.ts";
 import type { CustodyProvider } from "./custody/custody.ts";
+import type { PaymentRail } from "./rails/rail.ts";
 import { openWalletDatabase } from "./storage/db.ts";
 import { SqliteApprovalStore } from "./storage/sqlite-approval-store.ts";
 import { SqliteControlState } from "./storage/sqlite-control-state.ts";
@@ -35,18 +36,37 @@ function check(label: string, condition: boolean): void {
   passed++;
 }
 
-/** Custody is never exercised here — no payment in this test settles. */
+/** Custody is not exercised here — the test rail settles without signing. */
 const custody: CustodyProvider = {
   kind: "local",
   account: () => Promise.reject(new Error("custody unused in this test")),
   authorize: () => Promise.reject(new Error("custody unused in this test")),
 };
 
+/** A rail that always settles, for exercising spend accounting deterministically. */
+const settlingRail: PaymentRail = {
+  id: "x402",
+  supports: () => true,
+  quote: (req) =>
+    Promise.resolve({
+      total: req.amount,
+      fee: { amount: 0n, currency: req.amount.currency },
+      quoteRef: "test",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }),
+  settle: (req) =>
+    Promise.resolve({
+      settled: true,
+      reference: "test-settlement",
+      settledAmount: req.amount,
+    }),
+};
+
 /** Build a daemon backed entirely by the SQLite stores on `db`. */
 function buildWallet(db: DatabaseSync): WalletDaemon {
   return new WalletDaemon({
     policy: { mode: "tiered", autoApproveThreshold: money(100, "USD") },
-    rails: [],
+    rails: [settlingRail],
     custody,
     ledger: new SqliteLedger(db),
     mandates: new SqliteMandateStore(db),
@@ -68,6 +88,31 @@ async function main(): Promise<void> {
   const dbA = openWalletDatabase(DB_PATH);
   const walletA = buildWallet(dbA);
   walletA.createMandate(sampleMandate);
+
+  // Two sub-threshold payments settle and accumulate against a mandate's cap.
+  walletA.createMandate({
+    id: "spend-mandate",
+    grantedBy: "dave",
+    cap: money(500, "USD"),
+    rails: ["x402"],
+  });
+  for (let i = 0; i < 2; i++) {
+    const settled = await walletA.pay({
+      rail: "x402",
+      amount: money(50, "USD"), // $0.50 — under the $1.00 auto-approve line
+      payee: { address: "https://api.example.com" },
+      mandateId: "spend-mandate",
+    });
+    check(`sub-threshold payment ${i + 1} settles`, settled.status === "settled");
+  }
+  const spendBefore = walletA
+    .report()
+    .mandates.find((m) => m.id === "spend-mandate");
+  check(
+    "settled payments accumulate against the mandate",
+    spendBefore?.spent === "100",
+  );
+
   const escalated = await walletA.pay({
     rail: "x402",
     amount: money(500, "USD"), // $5.00 — over the $1.00 auto-approve threshold
@@ -95,6 +140,11 @@ async function main(): Promise<void> {
   );
   check("freeze survived the restart", walletB.controlStatus().frozen);
   check("audit ledger survived the restart", walletB.audit().length > 0);
+  check(
+    "accumulated mandate spend survived the restart",
+    walletB.report().mandates.find((m) => m.id === "spend-mandate")?.spent ===
+      "100",
+  );
 
   // --- Phase 2: drive the operator control plane over HTTP.
   console.log("\nphase 2: operator HTTP control plane");
@@ -118,9 +168,9 @@ async function main(): Promise<void> {
   try {
     const status = await api("GET", "/status");
     check(
-      "GET /status: frozen, 1 mandate, 1 approval",
+      "GET /status: frozen, 2 mandates, 1 approval",
       status.frozen === true &&
-        status.mandates === 1 &&
+        status.mandates === 2 &&
         status.pendingApprovals === 1,
     );
 
@@ -153,14 +203,14 @@ async function main(): Promise<void> {
     check("POST /mandates creates a mandate", created.id === "http-mandate");
 
     const mandates = (await api("GET", "/mandates")) as unknown[];
-    check("GET /mandates lists both mandates", mandates.length === 2);
+    check("GET /mandates lists all three mandates", mandates.length === 3);
 
     const report = await api("GET", "/report");
     check(
       "GET /report summarises spend and mandates",
       typeof report.generatedAt === "string" &&
         Array.isArray(report.mandates) &&
-        report.mandates.length === 2,
+        report.mandates.length === 3,
     );
 
     const uiRes = await fetch(`http://localhost:${PORT}/`);

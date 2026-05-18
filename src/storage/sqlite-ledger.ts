@@ -47,6 +47,25 @@ export class SqliteLedger implements Ledger {
     return rows.map((row) => this.toEvent(row));
   }
 
+  eventsByType(type: LedgerEventType, sinceIso?: string): LedgerEvent[] {
+    // The idx_ledger_type index keeps this off a full table scan.
+    const rows =
+      sinceIso === undefined
+        ? this.db
+            .prepare(
+              "SELECT seq, at, type, payment_id, data FROM ledger_events " +
+                "WHERE type = ? ORDER BY seq",
+            )
+            .all(type)
+        : this.db
+            .prepare(
+              "SELECT seq, at, type, payment_id, data FROM ledger_events " +
+                "WHERE type = ? AND at >= ? ORDER BY seq",
+            )
+            .all(type, sinceIso);
+    return rows.map((row) => this.toEvent(row));
+  }
+
   private toEvent(row: Record<string, unknown>): LedgerEvent {
     const paymentId = row["payment_id"];
     return {
