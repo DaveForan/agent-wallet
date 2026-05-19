@@ -24,6 +24,7 @@ import {
 import { NotImplementedError, WalletError } from "./errors.ts";
 import type { CartVerifier } from "./verification.ts";
 import { InMemoryLedger, type Ledger } from "./ledger.ts";
+import { RateLimiter, type RateLimitConfig } from "./rate-limit.ts";
 import { InMemoryMandateStore, type MandateStore } from "./mandates.ts";
 import { PolicyEngine, type PolicyContext } from "./policy.ts";
 import {
@@ -61,6 +62,12 @@ export interface WalletConfig {
    * before policy. Without one, a cart is taken as the agent states it.
    */
   cartVerifier?: CartVerifier;
+  /**
+   * Per-agent rate limit. An authenticated agent that exceeds this is denied
+   * with the reason `rate limit exceeded`. Unauthenticated payments are not
+   * rate-limited (they have no agent to key on).
+   */
+  rateLimit?: RateLimitConfig;
 }
 
 /** What an agent supplies to ask for a payment; `id`/`createdAt` are filled in. */
@@ -160,6 +167,7 @@ export class WalletDaemon {
   private readonly funding: FundingSourceStore;
   private readonly agents: AgentStore;
   private readonly cartVerifier: CartVerifier | undefined;
+  private readonly rateLimiter: RateLimiter | undefined;
   /** Per-mandate task chains — serialize spend decisions against each mandate. */
   private readonly mandateChains = new Map<string, Promise<unknown>>();
 
@@ -174,6 +182,9 @@ export class WalletDaemon {
     this.funding = config.funding ?? new InMemoryFundingSourceStore();
     this.agents = config.agents ?? new InMemoryAgentStore();
     this.cartVerifier = config.cartVerifier;
+    this.rateLimiter = config.rateLimit
+      ? new RateLimiter(config.rateLimit)
+      : undefined;
   }
 
   /** Register (or rotate) an agent; the bearer token is returned once, here. */
@@ -424,6 +435,17 @@ export class WalletDaemon {
     if (frozen) {
       this.ledger.append("payment.blocked", { reason: frozen }, request.id);
       return { status: "denied", paymentId: request.id, reason: frozen };
+    }
+
+    // Per-agent throttle — an authenticated agent that floods is denied.
+    if (
+      request.agentId &&
+      this.rateLimiter &&
+      !this.rateLimiter.admit(request.agentId)
+    ) {
+      const reason = `rate limit exceeded for agent "${request.agentId}"`;
+      this.ledger.append("payment.blocked", { reason }, request.id);
+      return { status: "denied", paymentId: request.id, reason };
     }
 
     // Replace an agent-supplied cart with the merchant's verified session

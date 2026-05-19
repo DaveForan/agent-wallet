@@ -59,6 +59,16 @@ console.log(
     : "ledger signing: off — hash-chained only",
 );
 
+// Per-agent rate limit: agents (once authenticated) get N payments per minute.
+// Set AGENT_WALLET_RATE_LIMIT_PER_MIN=0 to disable.
+const rateLimitPerMin = Number(
+  process.env["AGENT_WALLET_RATE_LIMIT_PER_MIN"] ?? 60,
+);
+const rateLimit =
+  rateLimitPerMin > 0
+    ? { count: rateLimitPerMin, windowMs: 60_000 }
+    : undefined;
+
 const wallet = new WalletDaemon({
   policy: {
     mode: "tiered",
@@ -66,6 +76,7 @@ const wallet = new WalletDaemon({
     hardLimit: money(5000, "USD"), // never settle above $50.00
     requireMandate: true, // a payment with no mandate is escalated
   },
+  rateLimit,
   rails: [
     new X402Rail({ network: "base-sepolia" }),
     new StripeRail(),
