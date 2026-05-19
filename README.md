@@ -235,7 +235,22 @@ These are deliberate boundaries of the first scope, not bugs:
   unit tests cover cart verification, the rail's guards and the order mapping.
 - **Per-line-item categories depend on the merchant.** Category and
   blocked-category mandate rules only bind line items the merchant labels;
-  merchant-level scoping (`allowedMerchants`) always applies.
+  merchant-level scoping (`allowedMerchants` / `allowedMerchantDomains`)
+  always applies.
+- **SSRF guard blocks literal addresses, not DNS rebinding.** Outbound
+  fetches reject literal private/loopback addresses, but a DNS name that
+  *resolves* into a private range is a residual gap — closing it needs
+  connection-time IP pinning.
+
+## Security posture
+
+- The control, payment and MCP servers bind to **127.0.0.1** only.
+- The control API requires a bearer token; the agent-facing payment and MCP
+  surfaces are unauthenticated and gated by the policy engine.
+- Agentic-checkout payments are bound to operator-approved merchant domains
+  (`allowedMerchantDomains`), and carts are re-verified with the merchant
+  before policy.
+- `npm audit` is clean.
 
 ## Next steps
 
