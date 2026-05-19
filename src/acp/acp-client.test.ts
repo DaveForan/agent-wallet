@@ -134,3 +134,26 @@ describe("AcpClient.completePurchase", () => {
     );
   });
 });
+
+describe("AcpClient.updateSession", () => {
+  test("posts the update and returns the session", async () => {
+    const client = new AcpClient({ fetchImpl: fetchReturning(session()) });
+    const updated = await client.updateSession(
+      "https://shop.example.com/acp",
+      "cs_1",
+      { line_items: [{ item: { id: "sku_9" }, quantity: 3 }] },
+    );
+    assert.equal(updated.id, "cs_1");
+    assert.equal(updated.line_items.length, 2);
+  });
+
+  test("throws when the merchant rejects the update", async () => {
+    const client = new AcpClient({
+      fetchImpl: fetchReturning({ error: "bad" }, 400),
+    });
+    await assert.rejects(
+      client.updateSession("https://shop.example.com/acp", "cs_1", {}),
+      /HTTP 400/,
+    );
+  });
+});

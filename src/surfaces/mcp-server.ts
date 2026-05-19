@@ -179,6 +179,42 @@ function registerAcpTools(
   );
 
   server.registerTool(
+    "acp_update_checkout",
+    {
+      title: "Update an agentic checkout",
+      description:
+        "Replace the items on an existing ACP checkout session — to refine " +
+        "the cart before paying. Returns the updated session.",
+      inputSchema: {
+        merchantEndpoint: z.string().url(),
+        sessionId: z.string().min(1),
+        items: z
+          .array(
+            z.object({
+              itemId: z.string().describe("The merchant's product/SKU id."),
+              quantity: z.number().int().positive(),
+            }),
+          )
+          .min(1)
+          .describe("The cart's items after the update."),
+      },
+    },
+    async (args) => {
+      const session = await acp.updateSession(
+        args.merchantEndpoint,
+        args.sessionId,
+        {
+          line_items: args.items.map((it) => ({
+            item: { id: it.itemId },
+            quantity: it.quantity,
+          })),
+        },
+      );
+      return textResult(session);
+    },
+  );
+
+  server.registerTool(
     "acp_checkout_status",
     {
       title: "Get an agentic checkout's status",

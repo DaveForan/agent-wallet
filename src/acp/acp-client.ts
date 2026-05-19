@@ -60,6 +60,31 @@ export class AcpClient implements CartVerifier {
     return (await res.json()) as AcpCheckoutSession;
   }
 
+  /** Update an existing checkout session — add or change items. */
+  async updateSession(
+    endpoint: string,
+    sessionId: string,
+    request: unknown,
+  ): Promise<AcpCheckoutSession> {
+    const res = await this.fetchImpl(
+      `${trimSlash(endpoint)}/checkout_sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          "API-Version": this.specVersion,
+          "Idempotency-Key": randomUUID(),
+        },
+        body: JSON.stringify(request),
+      },
+    );
+    if (!res.ok) {
+      throw new WalletError(`ACP update-session ${sessionId}: HTTP ${res.status}`);
+    }
+    return (await res.json()) as AcpCheckoutSession;
+  }
+
   /** Fetch a merchant's checkout session. */
   async getSession(
     endpoint: string,
