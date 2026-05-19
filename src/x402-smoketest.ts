@@ -60,7 +60,8 @@ async function main(): Promise<void> {
 
     const wallet = new WalletDaemon({
       policy: { mode: "autonomous" },
-      rails: [new X402Rail({ network: "base-sepolia" })],
+      // allowPrivate: the test resource server runs on localhost.
+      rails: [new X402Rail({ network: "base-sepolia", allowPrivate: true })],
       custody,
     });
 

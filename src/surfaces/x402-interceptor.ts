@@ -1,3 +1,4 @@
+import { guardedFetch } from "../core/net-guard.ts";
 import { compareMoney, type Money } from "../core/types.ts";
 import type { WalletDaemon } from "../core/wallet.ts";
 
@@ -27,12 +28,14 @@ export type FetchLike = (
 ) => Promise<Response>;
 
 export interface PayingFetchOptions {
-  /** Underlying fetch implementation. Defaults to global fetch. */
+  /** Underlying fetch. Defaults to an SSRF-guarded fetch. */
   baseFetch?: FetchLike;
   /** Mandate that ambient payments are drawn against. */
   mandateId?: string;
   /** Hard cap on a single ambient payment, checked before the wallet is asked. */
   maxPerCall?: Money;
+  /** Allow loopback / private targets — for local testing only. */
+  allowPrivate?: boolean;
 }
 
 /** Build a fetch that transparently satisfies x402 challenges via the wallet. */
@@ -41,7 +44,7 @@ export function createPayingFetch(
   opts: PayingFetchOptions = {},
 ): FetchLike {
   const baseFetch: FetchLike =
-    opts.baseFetch ?? ((input, init) => fetch(input, init));
+    opts.baseFetch ?? guardedFetch({ allowPrivate: opts.allowPrivate });
 
   return async function payingFetch(input, init) {
     const first = await baseFetch(input, init);

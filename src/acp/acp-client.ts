@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WalletError } from "../core/errors.ts";
+import { guardedFetch } from "../core/net-guard.ts";
 import type { Cart } from "../core/types.ts";
 import type { CartVerifier } from "../core/verification.ts";
 import type { AcpCheckoutSession, AcpOrderResult } from "./types.ts";
@@ -10,8 +11,10 @@ const ACP_SPEC_VERSION = "2026-04-17";
 export interface AcpClientOptions {
   /** ACP spec version sent in the API-Version header. */
   specVersion?: string;
-  /** fetch implementation — injectable for tests. */
+  /** fetch implementation — injectable for tests. Defaults to a guarded fetch. */
   fetchImpl?: typeof fetch;
+  /** Allow loopback / private merchant endpoints — for local testing only. */
+  allowPrivate?: boolean;
 }
 
 /**
@@ -29,7 +32,8 @@ export class AcpClient implements CartVerifier {
 
   constructor(opts: AcpClientOptions = {}) {
     this.specVersion = opts.specVersion ?? ACP_SPEC_VERSION;
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.fetchImpl =
+      opts.fetchImpl ?? guardedFetch({ allowPrivate: opts.allowPrivate });
   }
 
   /** Create a checkout session with a merchant (the agent builds the cart). */

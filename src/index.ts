@@ -12,6 +12,7 @@ export * from "./core/approvals.ts";
 export * from "./core/control.ts";
 export * from "./core/funding.ts";
 export * from "./core/verification.ts";
+export * from "./core/net-guard.ts";
 export * from "./core/policy.ts";
 export * from "./core/wallet.ts";
 

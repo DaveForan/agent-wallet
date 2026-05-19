@@ -2,6 +2,7 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 import type { ClientEvmSigner } from "@x402/evm";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { wrapFetchWithPayment } from "@x402/fetch";
+import { guardedFetch } from "../core/net-guard.ts";
 import type { CustodyProvider } from "../custody/custody.ts";
 import { WalletError } from "../core/errors.ts";
 import {
@@ -28,6 +29,12 @@ const CAIP2: Record<X402Network, string> = {
 export interface X402RailOptions {
   /** EVM network to settle on. Defaults to Base Sepolia (testnet). */
   network?: X402Network;
+  /**
+   * Allow fetching loopback / private addresses — for local testing only.
+   * Off by default: the resource URL is agent-supplied, so an unrestricted
+   * fetch would be an SSRF vector.
+   */
+  allowPrivate?: boolean;
 }
 
 /**
@@ -45,9 +52,12 @@ export interface X402RailOptions {
 export class X402Rail implements PaymentRail {
   readonly id: RailId = "x402";
   private readonly opts: X402RailOptions;
+  /** SSRF-guarded fetch — the resource URL comes from an untrusted agent. */
+  private readonly fetchImpl: typeof fetch;
 
   constructor(opts: X402RailOptions = {}) {
     this.opts = opts;
+    this.fetchImpl = guardedFetch({ allowPrivate: opts.allowPrivate });
   }
 
   /** x402 pays HTTP resources, so a payee is supported iff it is a URL. */
@@ -61,7 +71,7 @@ export class X402Rail implements PaymentRail {
    */
   async quote(req: PaymentRequest): Promise<RailQuote> {
     const url = this.resourceUrl(req.payee);
-    const probe = await fetch(url, { method: "GET" });
+    const probe = await this.fetchImpl(url, { method: "GET" });
     if (probe.status !== 402) {
       throw new WalletError(
         `x402 quote: ${url} returned ${probe.status}, not 402 — it is not a ` +
@@ -139,7 +149,7 @@ export class X402Rail implements PaymentRail {
       }
     });
 
-    const fetchWithPayment = wrapFetchWithPayment(fetch, client);
+    const fetchWithPayment = wrapFetchWithPayment(this.fetchImpl, client);
     const response = await fetchWithPayment(url, { method: "GET" });
     const result = await new x402HTTPClient(client).processResponse(response);
 
