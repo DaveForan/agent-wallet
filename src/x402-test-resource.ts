@@ -57,7 +57,7 @@ app.get("/paid", (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "127.0.0.1", () => {
   console.log(`x402 test resource listening on http://localhost:${PORT}/paid`);
   console.log(`  network: ${NETWORK} (Base Sepolia)`);
   console.log(`  price:   ${PRICE}`);

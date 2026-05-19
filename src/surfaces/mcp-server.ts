@@ -281,11 +281,15 @@ export function startHttpMcpServer(
   const server = createServer((req, res) => {
     void handleHttpMcp(wallet, acpClient, req, res);
   });
-  server.listen(port, () => {
+  // Loopback only — the MCP surface is unauthenticated (policy gates it).
+  server.listen(port, "127.0.0.1", () => {
     console.log(`agent-wallet MCP (HTTP) on http://localhost:${port}/mcp`);
   });
   return server;
 }
+
+/** Largest MCP request body accepted — MCP JSON-RPC messages are small. */
+const MAX_MCP_BODY_BYTES = 1_000_000;
 
 async function handleHttpMcp(
   wallet: WalletDaemon,
@@ -297,6 +301,11 @@ async function handleHttpMcp(
   if (path !== "/mcp") {
     res.writeHead(404, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "not found — the MCP endpoint is /mcp" }));
+    return;
+  }
+  if (Number(req.headers["content-length"] ?? 0) > MAX_MCP_BODY_BYTES) {
+    res.writeHead(413, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "request body too large" }));
     return;
   }
 

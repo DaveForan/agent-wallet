@@ -42,7 +42,12 @@ export interface ServeOptions {
    * rejected with 401 before the body is read or the router runs.
    */
   authorize?: (ctx: AuthContext) => boolean;
+  /** Interface to bind. Defaults to 127.0.0.1 — never expose to the network. */
+  host?: string;
 }
+
+/** Largest request body the wallet will read — guards against memory exhaustion. */
+const MAX_BODY_BYTES = 1_000_000;
 
 /**
  * Parse an untrusted JSON value into a {@link Money}. JSON cannot carry a
@@ -67,7 +72,9 @@ export function serve(
   const server = createServer((req, res) => {
     void dispatch(router, req, res, options);
   });
-  server.listen(port, () => {
+  // Bind to loopback by default — the wallet's surfaces are local, and the
+  // payment and MCP surfaces are unauthenticated.
+  server.listen(port, options.host ?? "127.0.0.1", () => {
     console.log(`agent-wallet ${name} on http://localhost:${port}`);
   });
   return server;
@@ -108,19 +115,24 @@ async function dispatch(
       res.end(JSON.stringify(result.body, bigintReplacer));
     }
   } catch (err) {
-    res.writeHead(500, { "content-type": "application/json" });
-    res.end(
-      JSON.stringify({
-        error: err instanceof Error ? err.message : String(err),
-      }),
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.includes("body too large") ? 413 : 500;
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: message }));
   }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
+    let size = 0;
     req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new Error(`request body too large (limit ${MAX_BODY_BYTES} bytes)`));
+        return;
+      }
       data += chunk.toString();
     });
     req.on("end", () => resolve(data));
