@@ -1,7 +1,7 @@
-import type { Server } from "node:http";
+import type { IncomingHttpHeaders, Server } from "node:http";
 import type { Cart, Payee, PaymentChannel, RailId } from "../core/types.ts";
 import type { PaymentInput, WalletDaemon } from "../core/wallet.ts";
-import { parseMoney, serve, type HttpResult } from "./http-util.ts";
+import { bearerToken, parseMoney, serve, type HttpResult } from "./http-util.ts";
 
 /**
  * Agent-facing HTTP surface — for non-MCP agents.
@@ -11,6 +11,10 @@ import { parseMoney, serve, type HttpResult } from "./http-util.ts";
  * (`control-api.ts`), so an agent that can reach this surface still cannot
  * grant itself spending authority or lift a freeze.
  *
+ * When agents are registered, a request must carry that agent's bearer token;
+ * the resolved agent id is attached to the payment (and cannot be spoofed —
+ * it comes from the token, never the body).
+ *
  *   POST /pay   request a payment
  */
 export async function routeAgentRequest(
@@ -18,9 +22,24 @@ export async function routeAgentRequest(
   method: string,
   path: string,
   body: unknown,
+  headers: IncomingHttpHeaders,
 ): Promise<HttpResult> {
   if (method === "POST" && path === "/pay") {
-    return { status: 200, body: await wallet.pay(parsePaymentInput(body)) };
+    let agentId: string | undefined;
+    if (wallet.hasAgents()) {
+      const token = bearerToken(headers);
+      agentId = token ? wallet.authenticateAgent(token) : undefined;
+      if (!agentId) {
+        return {
+          status: 401,
+          body: { error: "a valid agent bearer token is required" },
+        };
+      }
+    }
+    return {
+      status: 200,
+      body: await wallet.pay({ ...parsePaymentInput(body), agentId }),
+    };
   }
   return { status: 404, body: { error: `no route for ${method} ${path}` } };
 }
@@ -29,8 +48,8 @@ export async function routeAgentRequest(
 export function startHttpServer(wallet: WalletDaemon, port = 4022): Server {
   return serve(
     "payment API",
-    (method, path, _query, body) =>
-      routeAgentRequest(wallet, method, path, body),
+    (method, path, _query, body, headers) =>
+      routeAgentRequest(wallet, method, path, body, headers),
     port,
   );
 }

@@ -89,6 +89,12 @@ export class PolicyEngine {
       return deny(`mandate ${mandate.id} expired at ${mandate.expiresAt}`);
     }
 
+    if (mandate.agentId && req.agentId !== mandate.agentId) {
+      return deny(
+        `mandate ${mandate.id} is reserved for agent "${mandate.agentId}"`,
+      );
+    }
+
     if (mandate.rails?.length && !mandate.rails.includes(req.rail)) {
       return deny(`mandate ${mandate.id} does not permit the ${req.rail} rail`);
     }

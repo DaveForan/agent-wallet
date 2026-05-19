@@ -1,5 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { CustodyProvider } from "../custody/custody.ts";
+import {
+  hashToken,
+  InMemoryAgentStore,
+  type AgentStore,
+} from "./agents.ts";
 import type { PaymentRail, SettlementResult } from "../rails/rail.ts";
 import {
   InMemoryApprovalStore,
@@ -49,6 +54,8 @@ export interface WalletConfig {
   control?: ControlState;
   /** Funding-source store — the payment method tokens are minted against. */
   funding?: FundingSourceStore;
+  /** Agent registry. When non-empty, the agent surfaces require a token. */
+  agents?: AgentStore;
   /**
    * Verifies an agent-supplied cart against the merchant's real session
    * before policy. Without one, a cart is taken as the agent states it.
@@ -61,6 +68,21 @@ export type PaymentInput = Omit<
   PaymentRequest,
   "id" | "createdAt" | "channel"
 > & { channel?: PaymentChannel };
+
+/** A newly registered agent — the token is returned once, here, and never again. */
+export interface RegisteredAgent {
+  id: string;
+  label?: string;
+  token: string;
+  createdAt: string;
+}
+
+/** An agent as listed to the operator — carries no secret. */
+export interface AgentSummary {
+  id: string;
+  label?: string;
+  createdAt: string;
+}
 
 /** The outcome of a `pay()` call. */
 export type PayResult =
@@ -124,6 +146,7 @@ export class WalletDaemon {
   private readonly approvals: ApprovalStore;
   private readonly control: ControlState;
   private readonly funding: FundingSourceStore;
+  private readonly agents: AgentStore;
   private readonly cartVerifier: CartVerifier | undefined;
   /** Per-mandate task chains — serialize spend decisions against each mandate. */
   private readonly mandateChains = new Map<string, Promise<unknown>>();
@@ -137,7 +160,43 @@ export class WalletDaemon {
     this.approvals = config.approvals ?? new InMemoryApprovalStore();
     this.control = config.control ?? new InMemoryControlState();
     this.funding = config.funding ?? new InMemoryFundingSourceStore();
+    this.agents = config.agents ?? new InMemoryAgentStore();
     this.cartVerifier = config.cartVerifier;
+  }
+
+  /** Register (or rotate) an agent; the bearer token is returned once, here. */
+  registerAgent(id: string, label?: string): RegisteredAgent {
+    const token = `awk_${randomBytes(32).toString("base64url")}`;
+    const createdAt = new Date().toISOString();
+    this.agents.put({ id, tokenHash: hashToken(token), label, createdAt });
+    this.ledger.append("agent.registered", { agentId: id, label });
+    return { id, label, token, createdAt };
+  }
+
+  /** Every registered agent, without secrets. */
+  listAgents(): AgentSummary[] {
+    return this.agents.list().map((agent) => ({
+      id: agent.id,
+      label: agent.label,
+      createdAt: agent.createdAt,
+    }));
+  }
+
+  /** Revoke an agent — its token stops working immediately. */
+  revokeAgent(id: string): boolean {
+    const ok = this.agents.remove(id);
+    if (ok) this.ledger.append("agent.revoked", { agentId: id });
+    return ok;
+  }
+
+  /** Resolve a bearer token to its agent id, or undefined if unrecognised. */
+  authenticateAgent(token: string): string | undefined {
+    return this.agents.findByTokenHash(hashToken(token))?.id;
+  }
+
+  /** True once any agent is registered — then the agent surfaces require auth. */
+  hasAgents(): boolean {
+    return this.agents.list().length > 0;
   }
 
   /** The registered funding source, or undefined if none is set. */

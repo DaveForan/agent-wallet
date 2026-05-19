@@ -24,7 +24,9 @@ export type LedgerEventType =
   | "wallet.frozen"
   | "wallet.unfrozen"
   | "funding.registered"
-  | "funding.cleared";
+  | "funding.cleared"
+  | "agent.registered"
+  | "agent.revoked";
 
 export interface LedgerEvent {
   /** Monotonic sequence number, unique and ordered. */

@@ -260,6 +260,23 @@ async function main(): Promise<void> {
     const cleared = await api("DELETE", "/funding-source");
     check("DELETE /funding-source removes it", cleared.registered === false);
 
+    const agent = await api("POST", "/agents", {
+      id: "research-agent",
+      label: "Research",
+    });
+    check(
+      "POST /agents registers an agent and returns a one-time token",
+      typeof agent["token"] === "string" &&
+        String(agent["token"]).startsWith("awk_"),
+    );
+    const agentList = (await api("GET", "/agents")) as { id: string }[];
+    check(
+      "GET /agents lists the agent without its token",
+      agentList.some((a) => a.id === "research-agent"),
+    );
+    const revoked = await api("DELETE", "/agents/research-agent");
+    check("DELETE /agents/:id revokes the agent", revoked["revoked"] === true);
+
     console.log("\nfinal report:");
     console.log(
       JSON.stringify(report, null, 2)

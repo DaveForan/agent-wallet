@@ -176,6 +176,57 @@ async function main(): Promise<void> {
         /frozen/.test(blocked.result.reason ?? ""),
     );
 
+    // The operator registers an agent — this turns on authentication for the
+    // agent surfaces (payment API + MCP).
+    const agent = await control("POST", "/agents", {
+      id: "smoketest-agent",
+      label: "Smoke",
+    });
+    check(
+      "POST /agents registers an agent and returns a one-time token",
+      typeof agent.token === "string" && agent.token.startsWith("awk_"),
+    );
+
+    const payBody = JSON.stringify({
+      rail: "x402",
+      amount: "10",
+      currency: "USD",
+      payee: { address: "https://api.example.com" },
+    });
+    const noAuth = await fetch(`http://localhost:${PAY_PORT}/pay`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payBody,
+    });
+    check(
+      "the payment API rejects an unauthenticated request once agents exist",
+      noAuth.status === 401,
+    );
+
+    const withAuth = await fetch(`http://localhost:${PAY_PORT}/pay`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${agent.token}`,
+      },
+      body: payBody,
+    });
+    check(
+      "the payment API accepts a valid agent token",
+      withAuth.status !== 401,
+    );
+
+    let mcpRejected = false;
+    try {
+      await client.callTool({ name: "list_mandates", arguments: {} });
+    } catch {
+      mcpRejected = true;
+    }
+    check(
+      "the MCP surface rejects an unauthenticated agent once agents exist",
+      mcpRejected,
+    );
+
     console.log(
       `\nAll ${passed} checks passed — one wallet across MCP, payment and control.`,
     );

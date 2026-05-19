@@ -89,6 +89,12 @@ export interface PaymentRequest {
   mandateId?: string;
   /** The cart being purchased, for an agentic-checkout payment. */
   cart?: Cart;
+  /**
+   * The authenticated agent that made this request. Set by the wallet's
+   * surface from the agent's verified token — never from agent-supplied
+   * input, so it cannot be spoofed.
+   */
+  agentId?: string;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
@@ -126,6 +132,8 @@ export interface Mandate {
   blockedCategories?: string[];
   /** Ceiling on any single cart line item's unit price. */
   perItemCap?: Money;
+  /** If set, only the agent with this id may draw on the mandate. */
+  agentId?: string;
   /** ISO-8601 expiry. Undefined means no expiry. */
   expiresAt?: string;
   /** Set true to permanently disable the mandate. */

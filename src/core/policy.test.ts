@@ -476,6 +476,44 @@ describe("cart-aware policy", () => {
   });
 });
 
+describe("agent-scoped mandates", () => {
+  const autonomous: PolicyConfig = { mode: "autonomous" };
+
+  test("allows a payment from the agent the mandate is scoped to", () => {
+    assert.equal(
+      decide(autonomous, req({ agentId: "research-agent" }), {
+        mandate: mandate({ agentId: "research-agent" }),
+      }),
+      "allow",
+    );
+  });
+
+  test("denies a payment from a different agent", () => {
+    assert.equal(
+      decide(autonomous, req({ agentId: "other-agent" }), {
+        mandate: mandate({ agentId: "research-agent" }),
+      }),
+      "deny",
+    );
+  });
+
+  test("denies an unauthenticated payment against an agent-scoped mandate", () => {
+    assert.equal(
+      decide(autonomous, req(), {
+        mandate: mandate({ agentId: "research-agent" }),
+      }),
+      "deny",
+    );
+  });
+
+  test("an unscoped mandate accepts any agent", () => {
+    assert.equal(
+      decide(autonomous, req({ agentId: "anyone" }), { mandate: mandate() }),
+      "allow",
+    );
+  });
+});
+
 test("every decision carries a non-empty reason", () => {
   const engine = new PolicyEngine({ mode: "approve-every" });
   const decision = engine.evaluate(req(), {});

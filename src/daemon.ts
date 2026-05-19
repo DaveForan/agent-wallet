@@ -25,6 +25,7 @@ import { AcpCheckoutRail } from "./rails/acp-rail.ts";
 import { StripeRail } from "./rails/stripe-rail.ts";
 import { X402Rail } from "./rails/x402-rail.ts";
 import { openWalletDatabase } from "./storage/db.ts";
+import { SqliteAgentStore } from "./storage/sqlite-agent-store.ts";
 import { SqliteApprovalStore } from "./storage/sqlite-approval-store.ts";
 import { SqliteControlState } from "./storage/sqlite-control-state.ts";
 import { SqliteFundingSourceStore } from "./storage/sqlite-funding-store.ts";
@@ -76,6 +77,7 @@ const wallet = new WalletDaemon({
   approvals: new SqliteApprovalStore(db),
   control: new SqliteControlState(db),
   funding: fundingStore,
+  agents: new SqliteAgentStore(db),
   // Carts are verified against the merchant's real ACP session before policy.
   cartVerifier: acpClient,
 });

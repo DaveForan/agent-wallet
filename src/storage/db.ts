@@ -47,6 +47,14 @@ CREATE TABLE IF NOT EXISTS funding_source (
   id   INTEGER PRIMARY KEY CHECK (id = 1),
   data TEXT
 );
+
+CREATE TABLE IF NOT EXISTS agents (
+  id         TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL,
+  label      TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agents_token ON agents(token_hash);
 `;
 
 /**

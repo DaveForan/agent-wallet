@@ -36,6 +36,9 @@ import {
  *   GET  /funding-source             the registered funding source
  *   POST /funding-source             register one  ({ paymentMethodId, ... })
  *   DELETE /funding-source           remove it
+ *   GET  /agents                     list registered agents
+ *   POST /agents                     register one  ({ id, label })
+ *   DELETE /agents/:id               revoke an agent
  */
 export async function routeControlRequest(
   wallet: WalletDaemon,
@@ -155,6 +158,28 @@ export async function routeControlRequest(
     return { status: 200, body: fundingView(wallet) };
   }
 
+  if (method === "GET" && path === "/agents") {
+    return { status: 200, body: wallet.listAgents() };
+  }
+
+  if (method === "POST" && path === "/agents") {
+    const b = (body ?? {}) as Record<string, unknown>;
+    if (!b["id"]) {
+      return { status: 400, body: { error: "id is required" } };
+    }
+    // The response carries the bearer token — it is shown only this once.
+    const registered = wallet.registerAgent(
+      String(b["id"]),
+      b["label"] === undefined ? undefined : String(b["label"]),
+    );
+    return { status: 201, body: registered };
+  }
+
+  if (method === "DELETE" && path.startsWith("/agents/")) {
+    const id = decodeURIComponent(path.slice("/agents/".length));
+    return { status: 200, body: { revoked: wallet.revokeAgent(id) } };
+  }
+
   return notFound(`route ${method} ${path}`);
 }
 
@@ -263,6 +288,9 @@ function parseMandate(raw: unknown): Mandate {
   }
   if (r["perItemCap"] !== undefined) {
     mandate.perItemCap = parseMoney(r["perItemCap"]);
+  }
+  if (r["agentId"] !== undefined) {
+    mandate.agentId = String(r["agentId"]);
   }
   if (r["expiresAt"] !== undefined) {
     mandate.expiresAt = String(r["expiresAt"]);

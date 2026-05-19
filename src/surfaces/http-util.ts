@@ -19,13 +19,24 @@ export interface HttpResult {
   contentType?: string;
 }
 
-/** A pure request router: maps (method, path, query, body) to a result. */
+/** A request router: maps (method, path, query, body, headers) to a result. */
 export type HttpRouter = (
   method: string,
   path: string,
   query: URLSearchParams,
   body: unknown,
+  headers: IncomingHttpHeaders,
 ) => Promise<HttpResult>;
+
+/** Extract a `Bearer` token from request headers, if present. */
+export function bearerToken(
+  headers: IncomingHttpHeaders,
+): string | undefined {
+  const auth = headers["authorization"];
+  return typeof auth === "string" && auth.startsWith("Bearer ")
+    ? auth.slice("Bearer ".length)
+    : undefined;
+}
 
 /** What an `authorize` predicate sees about a request — never the body. */
 export interface AuthContext {
@@ -106,7 +117,13 @@ async function dispatch(
 
     const raw = await readBody(req);
     const body: unknown = raw ? JSON.parse(raw) : undefined;
-    const result = await router(method, url.pathname, url.searchParams, body);
+    const result = await router(
+      method,
+      url.pathname,
+      url.searchParams,
+      body,
+      req.headers,
+    );
     if (result.contentType) {
       res.writeHead(result.status, { "content-type": result.contentType });
       res.end(String(result.body));

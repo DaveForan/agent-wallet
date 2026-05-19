@@ -11,6 +11,7 @@ export * from "./core/mandates.ts";
 export * from "./core/approvals.ts";
 export * from "./core/control.ts";
 export * from "./core/funding.ts";
+export * from "./core/agents.ts";
 export * from "./core/ledger-signer.ts";
 export * from "./core/verification.ts";
 export * from "./core/net-guard.ts";
@@ -27,6 +28,7 @@ export * from "./storage/sqlite-mandate-store.ts";
 export * from "./storage/sqlite-approval-store.ts";
 export * from "./storage/sqlite-control-state.ts";
 export * from "./storage/sqlite-funding-store.ts";
+export * from "./storage/sqlite-agent-store.ts";
 
 export * from "./rails/rail.ts";
 export { X402Rail, type X402Network, type X402RailOptions } from "./rails/x402-rail.ts";

@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { AcpClient } from "../acp/acp-client.ts";
 import { bigintReplacer } from "../core/types.ts";
 import type { PayResult, WalletDaemon } from "../core/wallet.ts";
+import { bearerToken } from "./http-util.ts";
 
 /**
  * MCP surface — the *deliberate* payment interface.
@@ -57,6 +58,7 @@ export function registerWalletTools(
   server: McpServer,
   wallet: WalletDaemon,
   acpClient?: AcpClient,
+  agentId?: string,
 ): void {
   server.registerTool(
     "request_payment",
@@ -98,6 +100,7 @@ export function registerWalletTools(
         payee: { address: args.payeeAddress, label: args.payeeLabel },
         memo: args.memo,
         mandateId: args.mandateId,
+        agentId,
       });
       return textResult({ summary: summarize(result), result });
     },
@@ -128,7 +131,7 @@ export function registerWalletTools(
     async () => textResult(wallet.listMandates()),
   );
 
-  if (acpClient) registerAcpTools(server, wallet, acpClient);
+  if (acpClient) registerAcpTools(server, wallet, acpClient, agentId);
 }
 
 /**
@@ -139,6 +142,7 @@ function registerAcpTools(
   server: McpServer,
   wallet: WalletDaemon,
   acp: AcpClient,
+  agentId?: string,
 ): void {
   server.registerTool(
     "acp_create_checkout",
@@ -260,6 +264,7 @@ function registerAcpTools(
         payee: { address: args.merchantId, label: args.merchantName },
         memo: args.memo,
         mandateId: args.mandateId,
+        agentId,
         cart: {
           sessionId: args.sessionId,
           merchant: {
@@ -280,9 +285,10 @@ function registerAcpTools(
 export function createWalletMcpServer(
   wallet: WalletDaemon,
   acpClient?: AcpClient,
+  agentId?: string,
 ): McpServer {
   const server = new McpServer(SERVER_INFO);
-  registerWalletTools(server, wallet, acpClient);
+  registerWalletTools(server, wallet, acpClient, agentId);
   return server;
 }
 
@@ -345,8 +351,23 @@ async function handleHttpMcp(
     return;
   }
 
+  // When agents are registered, the MCP surface requires a valid agent token;
+  // the resolved id is bound to every payment the request makes.
+  let agentId: string | undefined;
+  if (wallet.hasAgents()) {
+    const token = bearerToken(req.headers);
+    agentId = token ? wallet.authenticateAgent(token) : undefined;
+    if (!agentId) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({ error: "a valid agent bearer token is required" }),
+      );
+      return;
+    }
+  }
+
   // Stateless: one server + transport per request, sharing the one wallet.
-  const mcp = createWalletMcpServer(wallet, acpClient);
+  const mcp = createWalletMcpServer(wallet, acpClient, agentId);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });

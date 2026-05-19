@@ -183,8 +183,22 @@ export const CONTROL_UI_HTML = `<!doctype html>
             <input id="m-domains" placeholder="shop.example.com" style="width:100%"></div>
           <div class="field"><label for="m-expires">expires (ISO)</label>
             <input id="m-expires" placeholder="2027-01-01T00:00:00Z"></div>
+          <div class="field"><label for="m-agent">agent (optional)</label>
+            <input id="m-agent" placeholder="agent id"></div>
           <div class="field"><button class="btn btn-primary" type="submit">Create mandate</button></div>
         </div>
+      </form>
+    </section>
+    <section class="card span2" aria-labelledby="h-agents">
+      <h2 id="h-agents">Agents</h2>
+      <div id="agents"></div>
+      <div id="agent-token" class="meta" style="margin-top:10px; word-break:break-all;"></div>
+      <form id="new-agent" style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="field grow"><label for="a-id">agent id</label>
+          <input id="a-id" required placeholder="research-agent" style="width:100%"></div>
+        <div class="field grow"><label for="a-label">label</label>
+          <input id="a-label" placeholder="optional" style="width:100%"></div>
+        <div class="field"><button class="btn btn-primary" type="submit">Register agent</button></div>
       </form>
     </section>
     <section class="card span2" aria-labelledby="h-audit">
@@ -361,6 +375,21 @@ function renderFunding(f) {
     '<div class="actions"><button class="btn btn-danger" data-action="clear-funding">Remove</button></div>';
 }
 
+function renderAgents(list) {
+  var el = document.getElementById("agents");
+  if (!list.length) {
+    el.innerHTML = '<p class="empty">No agents — the payment and MCP surfaces are open. Register an agent to require an authenticated token.</p>';
+    return;
+  }
+  el.innerHTML = list.map(function (a) {
+    return '<div class="row"><div class="head"><span class="amount">' + esc(a.id) + "</span>" +
+      (a.label ? '<span class="pill rail">' + esc(a.label) + "</span>" : "") + "</div>" +
+      '<div class="meta">registered ' + esc(a.createdAt) + "</div>" +
+      '<div class="actions"><button class="btn btn-danger" data-action="revoke-agent" data-id="' +
+      esc(a.id) + '">Revoke</button></div></div>';
+  }).join("");
+}
+
 async function refresh() {
   try {
     var status = await j("GET", "/status");
@@ -370,12 +399,14 @@ async function refresh() {
     var audit = await j("GET", "/audit");
     var funding = await j("GET", "/funding-source");
     var integrity = await j("GET", "/audit/verify");
+    var agents = await j("GET", "/agents");
     renderBanner(status);
     renderApprovals(approvals);
     renderReport(report, integrity);
     renderMandates(mandates, report);
     renderAudit(audit);
     renderFunding(funding);
+    renderAgents(agents);
     setErr("");
   } catch (e) {
     setErr(String(e.message || e));
@@ -412,6 +443,10 @@ document.addEventListener("click", function (ev) {
   } else if (action === "clear-funding") {
     if (confirm("Remove the funding source?")) {
       act(function () { return j("DELETE", "/funding-source"); });
+    }
+  } else if (action === "revoke-agent") {
+    if (confirm("Revoke agent " + id + "? Its token stops working.")) {
+      act(function () { return j("DELETE", "/agents/" + encodeURIComponent(id)); });
     }
   }
 });
@@ -451,6 +486,8 @@ document.getElementById("new-mandate").addEventListener("submit", function (ev) 
   if (domains.length) mandate.allowedMerchantDomains = domains;
   var expires = document.getElementById("m-expires").value.trim();
   if (expires) mandate.expiresAt = expires;
+  var agentId = document.getElementById("m-agent").value.trim();
+  if (agentId) mandate.agentId = agentId;
   act(function () {
     return j("POST", "/mandates", mandate).then(function () {
       document.getElementById("new-mandate").reset();
@@ -469,6 +506,21 @@ document.getElementById("new-funding").addEventListener("submit", function (ev) 
   act(function () {
     return j("POST", "/funding-source", source).then(function () {
       document.getElementById("new-funding").reset();
+    });
+  });
+});
+
+document.getElementById("new-agent").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  var agent = {
+    id: document.getElementById("a-id").value.trim(),
+    label: document.getElementById("a-label").value.trim() || undefined
+  };
+  act(function () {
+    return j("POST", "/agents", agent).then(function (res) {
+      document.getElementById("agent-token").textContent =
+        "Token for " + res.id + " — copy it now, it is shown only once:  " + res.token;
+      document.getElementById("new-agent").reset();
     });
   });
 });
