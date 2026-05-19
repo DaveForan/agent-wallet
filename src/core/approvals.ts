@@ -6,6 +6,12 @@ export interface PendingApproval {
   request: PaymentRequest;
   /** Why the policy engine escalated this payment. */
   reason: string;
+  /**
+   * Set by the daemon when an approval timeout is configured. Past this point
+   * the approval is auto-expired and the payment is blocked, so the queue
+   * does not accumulate indefinitely.
+   */
+  expiresAt?: string;
 }
 
 /**

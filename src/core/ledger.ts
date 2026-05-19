@@ -17,6 +17,7 @@ export type LedgerEventType =
   | "payment.blocked"
   | "approval.requested"
   | "approval.resolved"
+  | "approval.expired"
   | "payment.settled"
   | "payment.failed"
   | "mandate.created"

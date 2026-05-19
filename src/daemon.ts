@@ -69,6 +69,14 @@ const rateLimit =
     ? { count: rateLimitPerMin, windowMs: 60_000 }
     : undefined;
 
+// Auto-expire a pending approval after this many hours of no operator action.
+// Set AGENT_WALLET_APPROVAL_TIMEOUT_HOURS=0 to disable.
+const approvalTimeoutHours = Number(
+  process.env["AGENT_WALLET_APPROVAL_TIMEOUT_HOURS"] ?? 24,
+);
+const approvalTimeoutMs =
+  approvalTimeoutHours > 0 ? approvalTimeoutHours * 60 * 60 * 1000 : undefined;
+
 const wallet = new WalletDaemon({
   policy: {
     mode: "tiered",
@@ -77,6 +85,7 @@ const wallet = new WalletDaemon({
     requireMandate: true, // a payment with no mandate is escalated
   },
   rateLimit,
+  approvalTimeoutMs,
   rails: [
     new X402Rail({ network: "base-sepolia" }),
     new StripeRail(),

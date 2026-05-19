@@ -68,6 +68,11 @@ export interface WalletConfig {
    * rate-limited (they have no agent to key on).
    */
   rateLimit?: RateLimitConfig;
+  /**
+   * Pending approvals older than this are auto-expired; the queue self-cleans
+   * rather than accumulating forever. Default: never expire.
+   */
+  approvalTimeoutMs?: number;
 }
 
 /** What an agent supplies to ask for a payment; `id`/`createdAt` are filled in. */
@@ -168,6 +173,7 @@ export class WalletDaemon {
   private readonly agents: AgentStore;
   private readonly cartVerifier: CartVerifier | undefined;
   private readonly rateLimiter: RateLimiter | undefined;
+  private readonly approvalTimeoutMs: number | undefined;
   /** Per-mandate task chains — serialize spend decisions against each mandate. */
   private readonly mandateChains = new Map<string, Promise<unknown>>();
 
@@ -185,6 +191,32 @@ export class WalletDaemon {
     this.rateLimiter = config.rateLimit
       ? new RateLimiter(config.rateLimit)
       : undefined;
+    this.approvalTimeoutMs = config.approvalTimeoutMs;
+  }
+
+  /**
+   * Auto-expire pending approvals past their `expiresAt`. Each expired
+   * approval is removed and recorded as `approval.expired` and
+   * `payment.blocked` on the audit ledger. Called lazily from the operator-
+   * facing reads, so the queue self-cleans without a background timer.
+   */
+  private expirePendingApprovals(): void {
+    const now = Date.now();
+    for (const approval of this.approvals.list()) {
+      if (!approval.expiresAt) continue;
+      if (Date.parse(approval.expiresAt) >= now) continue;
+      this.approvals.remove(approval.approvalId);
+      this.ledger.append(
+        "approval.expired",
+        { approvalId: approval.approvalId, reason: "no operator action" },
+        approval.request.id,
+      );
+      this.ledger.append(
+        "payment.blocked",
+        { reason: "approval expired without operator action" },
+        approval.request.id,
+      );
+    }
   }
 
   /** Register (or rotate) an agent; the bearer token is returned once, here. */
@@ -290,6 +322,7 @@ export class WalletDaemon {
 
   /** A spend summary for the operator, computed from the audit ledger. */
   report(): SpendReport {
+    this.expirePendingApprovals();
     const payments = { settled: 0, failed: 0, denied: 0, blocked: 0 };
     const settled = new Map<string, bigint>();
     const orders: SpendReport["orders"] = [];
@@ -414,6 +447,7 @@ export class WalletDaemon {
 
   /** Payments still awaiting a human decision. */
   listPendingApprovals(): PendingApproval[] {
+    this.expirePendingApprovals();
     return this.approvals.list();
   }
 
@@ -483,10 +517,18 @@ export class WalletDaemon {
 
         if (decision.outcome === "needs_approval") {
           const approvalId = randomUUID();
-          this.approvals.put({ approvalId, request, reason: decision.reason });
+          const expiresAt = this.approvalTimeoutMs
+            ? new Date(Date.now() + this.approvalTimeoutMs).toISOString()
+            : undefined;
+          this.approvals.put({
+            approvalId,
+            request,
+            reason: decision.reason,
+            expiresAt,
+          });
           this.ledger.append(
             "approval.requested",
-            { approvalId, reason: decision.reason },
+            { approvalId, reason: decision.reason, expiresAt },
             request.id,
           );
           return {
@@ -507,6 +549,7 @@ export class WalletDaemon {
     approvalId: string,
     approved: boolean,
   ): Promise<PayResult> {
+    this.expirePendingApprovals();
     const pending = this.approvals.get(approvalId);
     if (!pending) throw new WalletError(`unknown approval ${approvalId}`);
     this.approvals.remove(approvalId);
