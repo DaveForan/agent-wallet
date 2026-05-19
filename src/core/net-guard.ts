@@ -1,3 +1,4 @@
+import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { WalletError } from "./errors.ts";
 
@@ -9,14 +10,20 @@ export interface UrlGuardOptions {
 type HostKind = "loopback" | "private" | "link-local" | "unspecified" | "public";
 
 /**
- * Throw if `rawUrl` is unsafe for the wallet to fetch — a non-HTTP(S) scheme,
- * or a literal private / loopback / link-local / metadata address. The wallet
- * fetches agent-supplied URLs (x402 resources, ACP endpoints); this blocks the
- * direct SSRF vectors, e.g. `http://169.254.169.254` (cloud metadata).
+ * SSRF guard for the wallet's outbound fetches.
  *
- * It does *not* resolve DNS names — a hostname that resolves into a private
- * range is a residual gap that needs connection-time IP pinning to close.
+ * The wallet fetches agent-supplied URLs (x402 resources, ACP merchant
+ * endpoints). {@link guardedFetch} rejects non-HTTP(S) schemes, literal
+ * private addresses, and — crucially — hostnames that *resolve* into a
+ * private range, so a DNS name pointing at an internal service is blocked.
+ *
+ * Residual: a host that resolves public for the check and rebinds to a
+ * private IP microseconds later, when the OS resolves it again for the
+ * connection, is not caught — closing that needs connection-time IP pinning,
+ * which does not compose with Node's global fetch.
  */
+
+/** Throw if `rawUrl` has a non-HTTP(S) scheme or a literal private host. */
 export function assertSafeUrl(
   rawUrl: string,
   opts: UrlGuardOptions = {},
@@ -39,9 +46,13 @@ export function assertSafeUrl(
   }
 }
 
-/** Wrap `fetch` so every request is SSRF-checked before it is sent. */
+/**
+ * A `fetch` that is SSRF-guarded: it checks the scheme and literal host, then
+ * resolves the hostname and rejects the request if any resolved address is
+ * private — before any connection is made.
+ */
 export function guardedFetch(opts: UrlGuardOptions = {}): typeof fetch {
-  return ((input: string | URL | Request, init?: RequestInit) => {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
     const target =
       typeof input === "string"
         ? input
@@ -49,21 +60,56 @@ export function guardedFetch(opts: UrlGuardOptions = {}): typeof fetch {
           ? input.href
           : input.url;
     assertSafeUrl(target, opts);
+    if (!opts.allowPrivate) {
+      await assertResolvesPublic(new URL(target).hostname);
+    }
     return fetch(input, init);
   }) as typeof fetch;
+}
+
+/** Resolve a DNS hostname and throw if any resolved address is not public. */
+async function assertResolvesPublic(hostname: string): Promise<void> {
+  const bare =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
+  // A literal IP was already classified by assertSafeUrl.
+  if (isIP(bare) !== 0) return;
+
+  let addresses: { address: string }[];
+  try {
+    addresses = await dnsLookup(hostname, { all: true });
+  } catch {
+    throw new WalletError(
+      `refusing to fetch ${hostname}: DNS resolution failed`,
+    );
+  }
+  for (const addr of addresses) {
+    const kind = classifyIp(addr.address);
+    if (kind !== "public") {
+      throw new WalletError(
+        `refusing to fetch ${hostname}: it resolves to a ${kind} address ` +
+          `(${addr.address}) — possible SSRF`,
+      );
+    }
+  }
 }
 
 /** Classify a URL hostname; returns undefined for an ordinary DNS name. */
 function classifyHost(hostname: string): HostKind | undefined {
   const host = hostname.toLowerCase();
   if (host === "localhost" || host.endsWith(".localhost")) return "loopback";
-  // URL.hostname wraps an IPv6 literal in brackets.
   const bare =
     host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
-  const version = isIP(bare);
-  if (version === 4) return classifyV4(bare);
-  if (version === 6) return classifyV6(bare);
-  return undefined; // a DNS name — this synchronous guard does not resolve it
+  return isIP(bare) ? classifyIp(bare) : undefined;
+}
+
+/** Classify a raw IPv4/IPv6 address. */
+function classifyIp(ip: string): HostKind {
+  const version = isIP(ip);
+  if (version === 4) return classifyV4(ip);
+  if (version === 6) return classifyV6(ip);
+  return "public";
 }
 
 function classifyV4(ip: string): HostKind {
