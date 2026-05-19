@@ -251,6 +251,9 @@ Each remaining item has a genuine external dependency — not deferred code:
   (`POST /agents`) — otherwise they are open and gated by policy alone.
 - Each payment is bound to the **authenticated agent** (from its token, not
   agent input); a mandate can be **scoped to one agent** (`mandate.agentId`).
+- Authenticated agents are **rate-limited** (default 60 payments/minute) and
+  **pending approvals auto-expire** (default 24 hours) — the queue self-cleans.
+  The spend report carries a **per-agent breakdown** for attribution.
 - The audit ledger is **hash-chained** — `GET /audit/verify` detects any edit,
   deletion or reorder of the stored ledger. Set `AGENT_WALLET_LEDGER_KEY`
   (see `npm run ledger:keygen`) to also **sign** every event, so rewriting
