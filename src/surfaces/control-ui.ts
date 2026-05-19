@@ -158,11 +158,31 @@ export const CONTROL_UI_HTML = `<!doctype html>
             <input id="m-ccy" value="USD" required style="width:90px"></div>
           <div class="field"><label for="m-txn">per-txn cap (optional)</label>
             <input id="m-txn" type="number" min="0"></div>
+          <div class="field"><label for="m-itemcap">per-item cap (optional)</label>
+            <input id="m-itemcap" type="number" min="0"></div>
           <div class="field"><label>rails</label>
-            <span><label style="display:inline; margin-right:10px;">
+            <span><label style="display:inline; margin-right:8px;">
               <input type="checkbox" id="m-x402" checked> x402</label>
+            <label style="display:inline; margin-right:8px;">
+              <input type="checkbox" id="m-stripe" checked> stripe</label>
             <label style="display:inline;">
-              <input type="checkbox" id="m-stripe" checked> stripe</label></span></div>
+              <input type="checkbox" id="m-acp" checked> acp</label></span></div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <div class="field grow"><label for="m-payees">allowed payees (comma-separated)</label>
+            <input id="m-payees" style="width:100%"></div>
+          <div class="field grow"><label for="m-cats">allowed categories</label>
+            <input id="m-cats" style="width:100%"></div>
+          <div class="field grow"><label for="m-blocked">blocked categories</label>
+            <input id="m-blocked" placeholder="alcohol, gambling" style="width:100%"></div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+          <div class="field grow"><label for="m-merchants">allowed merchant ids</label>
+            <input id="m-merchants" style="width:100%"></div>
+          <div class="field grow"><label for="m-domains">allowed merchant domains</label>
+            <input id="m-domains" placeholder="shop.example.com" style="width:100%"></div>
+          <div class="field"><label for="m-expires">expires (ISO)</label>
+            <input id="m-expires" placeholder="2027-01-01T00:00:00Z"></div>
           <div class="field"><button class="btn btn-primary" type="submit">Create mandate</button></div>
         </div>
       </form>
@@ -403,6 +423,7 @@ document.getElementById("new-mandate").addEventListener("submit", function (ev) 
   var rails = [];
   if (document.getElementById("m-x402").checked) rails.push("x402");
   if (document.getElementById("m-stripe").checked) rails.push("stripe");
+  if (document.getElementById("m-acp").checked) rails.push("acp");
   var mandate = {
     id: document.getElementById("m-id").value.trim(),
     grantedBy: document.getElementById("m-by").value.trim(),
@@ -411,6 +432,24 @@ document.getElementById("new-mandate").addEventListener("submit", function (ev) 
   };
   var txn = document.getElementById("m-txn").value;
   if (txn) mandate.perTxnCap = { amount: txn, currency: ccy };
+  var itemCap = document.getElementById("m-itemcap").value;
+  if (itemCap) mandate.perItemCap = { amount: itemCap, currency: ccy };
+  function csv(id) {
+    return document.getElementById(id).value
+      .split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+  var payees = csv("m-payees");
+  if (payees.length) mandate.allowedPayees = payees;
+  var cats = csv("m-cats");
+  if (cats.length) mandate.allowedCategories = cats;
+  var blocked = csv("m-blocked");
+  if (blocked.length) mandate.blockedCategories = blocked;
+  var merchants = csv("m-merchants");
+  if (merchants.length) mandate.allowedMerchants = merchants;
+  var domains = csv("m-domains");
+  if (domains.length) mandate.allowedMerchantDomains = domains;
+  var expires = document.getElementById("m-expires").value.trim();
+  if (expires) mandate.expiresAt = expires;
   act(function () {
     return j("POST", "/mandates", mandate).then(function () {
       document.getElementById("new-mandate").reset();

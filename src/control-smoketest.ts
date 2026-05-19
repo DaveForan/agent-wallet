@@ -201,9 +201,19 @@ async function main(): Promise<void> {
       grantedBy: "dave",
       cap: { amount: "25000", currency: "USD" },
       perTxnCap: { amount: "5000", currency: "USD" },
-      rails: ["stripe"],
+      perItemCap: { amount: "2000", currency: "USD" },
+      rails: ["stripe", "acp"],
+      blockedCategories: ["alcohol"],
+      allowedMerchantDomains: ["shop.realgrocer.com"],
     });
     check("POST /mandates creates a mandate", created.id === "http-mandate");
+    check(
+      "the mandate's shopping rules round-trip",
+      Array.isArray(created.blockedCategories) &&
+        created.blockedCategories[0] === "alcohol" &&
+        created.allowedMerchantDomains?.[0] === "shop.realgrocer.com" &&
+        created.perItemCap?.amount === "2000",
+    );
 
     const mandates = (await api("GET", "/mandates")) as unknown[];
     check("GET /mandates lists all three mandates", mandates.length === 3);
