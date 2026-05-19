@@ -15,7 +15,9 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { AcpClient } from "./acp/acp-client.ts";
+import { Ed25519LedgerSigner } from "./core/ledger-signer.ts";
 import { money } from "./core/types.ts";
 import { WalletDaemon } from "./core/wallet.ts";
 import { LocalCustody } from "./custody/local-custody.ts";
@@ -40,6 +42,22 @@ const db = openWalletDatabase(process.env["AGENT_WALLET_DB"]);
 const fundingStore = new SqliteFundingSourceStore(db);
 const acpClient = new AcpClient();
 
+// Optional ledger signing — when AGENT_WALLET_LEDGER_KEY names a PEM file (or
+// holds the PEM itself), every audit event is signed, so rewriting history
+// needs the key and not just database access. Generate one with
+// `npm run ledger:keygen`. Unset → hash-chained but unsigned.
+const ledgerKey = process.env["AGENT_WALLET_LEDGER_KEY"];
+const ledgerSigner = ledgerKey
+  ? new Ed25519LedgerSigner(
+      ledgerKey.includes("BEGIN ") ? ledgerKey : readFileSync(ledgerKey, "utf8"),
+    )
+  : undefined;
+console.log(
+  ledgerSigner
+    ? `ledger signing: on (key ${ledgerSigner.keyId})`
+    : "ledger signing: off — hash-chained only",
+);
+
 const wallet = new WalletDaemon({
   policy: {
     mode: "tiered",
@@ -53,7 +71,7 @@ const wallet = new WalletDaemon({
     new AcpCheckoutRail({ fundingStore, acpClient }),
   ],
   custody: new LocalCustody(),
-  ledger: new SqliteLedger(db),
+  ledger: new SqliteLedger(db, ledgerSigner),
   mandates: new SqliteMandateStore(db),
   approvals: new SqliteApprovalStore(db),
   control: new SqliteControlState(db),

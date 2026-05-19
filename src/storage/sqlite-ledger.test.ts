@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Ed25519LedgerSigner } from "../core/ledger-signer.ts";
 import { openWalletDatabase } from "./db.ts";
 import { SqliteLedger } from "./sqlite-ledger.ts";
 
@@ -44,5 +45,26 @@ test("a SQLite ledger detects a deleted row", () => {
   ledger.append("wallet.frozen", {});
   // Drop the middle event — the hash chain no longer links.
   db.prepare("DELETE FROM ledger_events WHERE seq = 2").run();
+  assert.equal(ledger.verifyIntegrity().ok, false);
+});
+
+test("a signed SQLite ledger verifies its events' signatures", () => {
+  const { signer } = Ed25519LedgerSigner.generate();
+  const ledger = new SqliteLedger(openWalletDatabase(":memory:"), signer);
+  ledger.append("payment.requested", { amount: 10n });
+  ledger.append("payment.settled", { amount: 10n });
+  const result = ledger.verifyIntegrity();
+  assert.equal(result.ok, true);
+  assert.equal(ledger.history()[0].keyId, signer.keyId);
+});
+
+test("a signed SQLite ledger detects a tampered row", () => {
+  const { signer } = Ed25519LedgerSigner.generate();
+  const db = openWalletDatabase(":memory:");
+  const ledger = new SqliteLedger(db, signer);
+  ledger.append("payment.requested", { amount: 10n });
+  db.prepare("UPDATE ledger_events SET data = ? WHERE seq = 1").run(
+    '{"amount":"TAMPERED"}',
+  );
   assert.equal(ledger.verifyIntegrity().ok, false);
 });

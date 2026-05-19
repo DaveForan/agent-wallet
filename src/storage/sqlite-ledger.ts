@@ -8,9 +8,10 @@ import {
   type LedgerEventType,
   type LedgerIntegrity,
 } from "../core/ledger.ts";
+import type { LedgerSigner } from "../core/ledger-signer.ts";
 import { decode, encode } from "./codec.ts";
 
-const COLUMNS = "seq, at, type, payment_id, data, hash";
+const COLUMNS = "seq, at, type, payment_id, data, hash, signature, key_id";
 
 /**
  * SQLite-backed audit ledger — a durable, drop-in replacement for
@@ -20,9 +21,12 @@ const COLUMNS = "seq, at, type, payment_id, data, hash";
  */
 export class SqliteLedger implements Ledger {
   private readonly db: DatabaseSync;
+  private readonly signer: LedgerSigner | undefined;
 
-  constructor(db: DatabaseSync) {
+  /** An optional signer signs every event's hash. */
+  constructor(db: DatabaseSync, signer?: LedgerSigner) {
     this.db = db;
+    this.signer = signer;
   }
 
   append(
@@ -39,13 +43,24 @@ export class SqliteLedger implements Ledger {
     const seq = prev ? Number(prev["seq"]) + 1 : 1;
     const prevHash = prev ? String(prev["hash"]) : GENESIS_HASH;
     const hash = hashLedgerEvent({ seq, at, type, paymentId, data }, prevHash);
+    const signature = this.signer?.sign(hash);
+    const keyId = this.signer?.keyId;
 
     this.db
       .prepare(
-        `INSERT INTO ledger_events (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ledger_events (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(seq, at, type, paymentId ?? null, encode(data), hash);
-    return { seq, at, type, paymentId, data, hash };
+      .run(
+        seq,
+        at,
+        type,
+        paymentId ?? null,
+        encode(data),
+        hash,
+        signature ?? null,
+        keyId ?? null,
+      );
+    return { seq, at, type, paymentId, data, hash, signature, keyId };
   }
 
   history(paymentId?: string): LedgerEvent[] {
@@ -83,11 +98,13 @@ export class SqliteLedger implements Ledger {
   }
 
   verifyIntegrity(): LedgerIntegrity {
-    return checkChain(this.history());
+    return checkChain(this.history(), this.signer);
   }
 
   private toEvent(row: Record<string, unknown>): LedgerEvent {
     const paymentId = row["payment_id"];
+    const signature = row["signature"];
+    const keyId = row["key_id"];
     return {
       seq: Number(row["seq"]),
       at: String(row["at"]),
@@ -98,6 +115,8 @@ export class SqliteLedger implements Ledger {
           : String(paymentId),
       data: decode<Record<string, unknown>>(String(row["data"])),
       hash: String(row["hash"]),
+      signature: signature == null ? undefined : String(signature),
+      keyId: keyId == null ? undefined : String(keyId),
     };
   }
 }

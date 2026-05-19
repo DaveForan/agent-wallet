@@ -295,7 +295,8 @@ function renderReport(rep, integrity) {
     integrityHtml = '<div class="stat"><span>ledger integrity</span><span class="v">' +
       (integrity.ok
         ? "verified"
-        : "TAMPERED @ seq " + esc(integrity.brokenAt)) +
+        : "TAMPERED @ seq " + esc(integrity.brokenAt) +
+          (integrity.reason ? " (" + esc(integrity.reason) + ")" : "")) +
       "</span></div>";
   }
   document.getElementById("report").innerHTML =

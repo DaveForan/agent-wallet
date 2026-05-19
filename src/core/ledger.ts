@@ -8,6 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { LedgerSigner } from "./ledger-signer.ts";
 import { bigintReplacer } from "./types.ts";
 
 export type LedgerEventType =
@@ -37,14 +38,20 @@ export interface LedgerEvent {
   data: Record<string, unknown>;
   /** SHA-256 hash chaining this event to the previous one. */
   hash: string;
+  /** Signature over `hash`, when a ledger signer is configured. */
+  signature?: string;
+  /** Id of the key that produced `signature`. */
+  keyId?: string;
 }
 
-/** The result of checking the ledger's hash chain. */
+/** The result of checking the ledger's integrity. */
 export interface LedgerIntegrity {
   ok: boolean;
   events: number;
-  /** Sequence number of the first event whose hash does not verify. */
+  /** Sequence number of the first event that does not verify. */
   brokenAt?: number;
+  /** Why verification failed, when it did. */
+  reason?: string;
 }
 
 /** The previous-hash value for the very first event. */
@@ -72,13 +79,37 @@ export function hashLedgerEvent(
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-/** Walk events in order and confirm each event's chained hash. */
-export function checkChain(events: LedgerEvent[]): LedgerIntegrity {
+/**
+ * Walk events in order and confirm each event's chained hash. When a `signer`
+ * is given, every event must also carry a signature that verifies under it.
+ */
+export function checkChain(
+  events: LedgerEvent[],
+  signer?: LedgerSigner,
+): LedgerIntegrity {
   let prevHash = GENESIS_HASH;
   for (const event of events) {
-    const expected = hashLedgerEvent(event, prevHash);
-    if (event.hash !== expected) {
-      return { ok: false, events: events.length, brokenAt: event.seq };
+    if (event.hash !== hashLedgerEvent(event, prevHash)) {
+      return {
+        ok: false,
+        events: events.length,
+        brokenAt: event.seq,
+        reason: "hash mismatch",
+      };
+    }
+    if (signer) {
+      const signed =
+        event.signature !== undefined &&
+        event.keyId !== undefined &&
+        signer.verify(event.hash, event.signature, event.keyId);
+      if (!signed) {
+        return {
+          ok: false,
+          events: events.length,
+          brokenAt: event.seq,
+          reason: "signature missing or invalid",
+        };
+      }
     }
     prevHash = event.hash;
   }
@@ -107,6 +138,12 @@ export interface Ledger {
 export class InMemoryLedger implements Ledger {
   private readonly events: LedgerEvent[] = [];
   private seq = 0;
+  private readonly signer: LedgerSigner | undefined;
+
+  /** An optional signer signs every event's hash. */
+  constructor(signer?: LedgerSigner) {
+    this.signer = signer;
+  }
 
   append(
     type: LedgerEventType,
@@ -118,6 +155,10 @@ export class InMemoryLedger implements Ledger {
     const prevHash = this.events.at(-1)?.hash ?? GENESIS_HASH;
     const hash = hashLedgerEvent({ seq, at, type, paymentId, data }, prevHash);
     const event: LedgerEvent = { seq, at, type, paymentId, data, hash };
+    if (this.signer) {
+      event.signature = this.signer.sign(hash);
+      event.keyId = this.signer.keyId;
+    }
     this.events.push(event);
     return event;
   }
@@ -134,6 +175,6 @@ export class InMemoryLedger implements Ledger {
   }
 
   verifyIntegrity(): LedgerIntegrity {
-    return checkChain(this.events);
+    return checkChain(this.events, this.signer);
   }
 }

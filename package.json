@@ -18,6 +18,7 @@
     "mcp": "node src/mcp-main.ts",
     "mcp:check": "node src/mcp-smoketest.ts",
     "custody:address": "node src/custody-init.ts",
+    "ledger:keygen": "node src/ledger-keygen.ts",
     "x402:resource": "node src/x402-test-resource.ts",
     "x402:check": "node src/x402-smoketest.ts",
     "stripe:check": "node src/stripe-smoketest.ts",

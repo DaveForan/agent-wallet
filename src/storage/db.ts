@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS ledger_events (
   type       TEXT NOT NULL,
   payment_id TEXT,
   data       TEXT NOT NULL,
-  hash       TEXT NOT NULL DEFAULT ''
+  hash       TEXT NOT NULL DEFAULT '',
+  signature  TEXT,
+  key_id     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_payment ON ledger_events(payment_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_type    ON ledger_events(type);
@@ -59,13 +61,17 @@ export function openWalletDatabase(path: string = DEFAULT_DB_PATH): DatabaseSync
   // WAL lets readers (status, reports) run while a payment is being written.
   db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
-  // Migrate databases that predate the ledger hash chain.
-  try {
-    db.exec(
-      "ALTER TABLE ledger_events ADD COLUMN hash TEXT NOT NULL DEFAULT ''",
-    );
-  } catch {
-    // The column already exists — nothing to migrate.
+  // Migrate databases that predate the ledger hash chain / event signing.
+  for (const column of [
+    "hash TEXT NOT NULL DEFAULT ''",
+    "signature TEXT",
+    "key_id TEXT",
+  ]) {
+    try {
+      db.exec(`ALTER TABLE ledger_events ADD COLUMN ${column}`);
+    } catch {
+      // The column already exists — nothing to migrate.
+    }
   }
   // The control and funding tables each hold exactly one row; ensure they exist.
   db.prepare(
