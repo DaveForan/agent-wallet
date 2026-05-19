@@ -24,6 +24,7 @@ import {
  *   GET  /status                    freeze state + queue sizes
  *   GET  /report                    spend summary from the ledger
  *   GET  /audit?paymentId=...        raw audit ledger
+ *   GET  /audit/verify              verify the ledger hash chain
  *   GET  /mandates                   list mandates
  *   POST /mandates                   create a mandate
  *   GET  /mandates/:id               fetch one mandate
@@ -71,6 +72,10 @@ export async function routeControlRequest(
       status: 200,
       body: wallet.audit(query.get("paymentId") ?? undefined),
     };
+  }
+
+  if (method === "GET" && path === "/audit/verify") {
+    return { status: 200, body: wallet.verifyLedger() };
   }
 
   if (method === "GET" && path === "/mandates") {

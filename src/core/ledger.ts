@@ -2,9 +2,13 @@
  * Append-only audit ledger. Every decision and state change a payment goes
  * through is recorded here — this is the wallet's accountability backbone.
  *
- * The in-memory implementation is for development; the `Ledger` interface is
- * the seam for a durable backend (SQLite, Postgres, an event store) later.
+ * Events are **hash-chained**: each carries a SHA-256 hash over its content
+ * and the previous event's hash, so any edit, deletion or reorder of the
+ * stored ledger is detectable via `verifyIntegrity()`.
  */
+
+import { createHash } from "node:crypto";
+import { bigintReplacer } from "./types.ts";
 
 export type LedgerEventType =
   | "payment.requested"
@@ -31,6 +35,54 @@ export interface LedgerEvent {
   paymentId?: string;
   /** Event-specific payload. */
   data: Record<string, unknown>;
+  /** SHA-256 hash chaining this event to the previous one. */
+  hash: string;
+}
+
+/** The result of checking the ledger's hash chain. */
+export interface LedgerIntegrity {
+  ok: boolean;
+  events: number;
+  /** Sequence number of the first event whose hash does not verify. */
+  brokenAt?: number;
+}
+
+/** The previous-hash value for the very first event. */
+export const GENESIS_HASH = "0".repeat(64);
+
+/** Compute an event's tamper-evident hash, chained to `prevHash`. */
+export function hashLedgerEvent(
+  fields: {
+    seq: number;
+    at: string;
+    type: string;
+    paymentId?: string;
+    data: Record<string, unknown>;
+  },
+  prevHash: string,
+): string {
+  const canonical = [
+    String(fields.seq),
+    fields.at,
+    fields.type,
+    fields.paymentId ?? "",
+    JSON.stringify(fields.data, bigintReplacer),
+    prevHash,
+  ].join("\n");
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+/** Walk events in order and confirm each event's chained hash. */
+export function checkChain(events: LedgerEvent[]): LedgerIntegrity {
+  let prevHash = GENESIS_HASH;
+  for (const event of events) {
+    const expected = hashLedgerEvent(event, prevHash);
+    if (event.hash !== expected) {
+      return { ok: false, events: events.length, brokenAt: event.seq };
+    }
+    prevHash = event.hash;
+  }
+  return { ok: true, events: events.length };
 }
 
 export interface Ledger {
@@ -47,6 +99,8 @@ export interface Ledger {
    * it keeps hot-path reads off a full ledger scan.
    */
   eventsByType(type: LedgerEventType, sinceIso?: string): LedgerEvent[];
+  /** Verify the hash chain — detects any tampering with the stored ledger. */
+  verifyIntegrity(): LedgerIntegrity;
 }
 
 /** Development ledger. Events live in process memory and are lost on restart. */
@@ -59,13 +113,11 @@ export class InMemoryLedger implements Ledger {
     data: Record<string, unknown>,
     paymentId?: string,
   ): LedgerEvent {
-    const event: LedgerEvent = {
-      seq: ++this.seq,
-      at: new Date().toISOString(),
-      type,
-      paymentId,
-      data,
-    };
+    const seq = ++this.seq;
+    const at = new Date().toISOString();
+    const prevHash = this.events.at(-1)?.hash ?? GENESIS_HASH;
+    const hash = hashLedgerEvent({ seq, at, type, paymentId, data }, prevHash);
+    const event: LedgerEvent = { seq, at, type, paymentId, data, hash };
     this.events.push(event);
     return event;
   }
@@ -77,8 +129,11 @@ export class InMemoryLedger implements Ledger {
 
   eventsByType(type: LedgerEventType, sinceIso?: string): LedgerEvent[] {
     return this.events.filter(
-      (e) =>
-        e.type === type && (sinceIso === undefined || e.at >= sinceIso),
+      (e) => e.type === type && (sinceIso === undefined || e.at >= sinceIso),
     );
+  }
+
+  verifyIntegrity(): LedgerIntegrity {
+    return checkChain(this.events);
   }
 }

@@ -258,7 +258,7 @@ function renderApprovals(list) {
   }).join("");
 }
 
-function renderReport(rep) {
+function renderReport(rep, integrity) {
   var p = rep.payments || {};
   var ccy = rep.settledByCurrency || {};
   var ccyRows = Object.keys(ccy).map(function (c) {
@@ -270,6 +270,14 @@ function renderReport(rep) {
     return '<div class="meta">order ' + esc(o.orderId) + " · " +
       fmt(esc(o.amount)) + " " + esc(o.currency) + "</div>";
   }).join("");
+  var integrityHtml = "";
+  if (integrity) {
+    integrityHtml = '<div class="stat"><span>ledger integrity</span><span class="v">' +
+      (integrity.ok
+        ? "verified"
+        : "TAMPERED @ seq " + esc(integrity.brokenAt)) +
+      "</span></div>";
+  }
   document.getElementById("report").innerHTML =
     '<div class="stat"><span>settled</span><span class="v">' + fmt(p.settled || 0) + "</span></div>" +
     '<div class="stat"><span>failed</span><span class="v">' + fmt(p.failed || 0) + "</span></div>" +
@@ -277,7 +285,8 @@ function renderReport(rep) {
     '<div class="stat"><span>blocked by freeze</span><span class="v">' + fmt(p.blocked || 0) + "</span></div>" +
     ccyRows +
     '<div class="stat"><span>merchant orders</span><span class="v">' + fmt(orders.length) + "</span></div>" +
-    orderRows;
+    orderRows +
+    integrityHtml;
 }
 
 function renderMandates(list, rep) {
@@ -339,9 +348,10 @@ async function refresh() {
     var approvals = await j("GET", "/approvals");
     var audit = await j("GET", "/audit");
     var funding = await j("GET", "/funding-source");
+    var integrity = await j("GET", "/audit/verify");
     renderBanner(status);
     renderApprovals(approvals);
-    renderReport(report);
+    renderReport(report, integrity);
     renderMandates(mandates, report);
     renderAudit(audit);
     renderFunding(funding);

@@ -201,6 +201,11 @@ export class WalletDaemon {
     return this.ledger.history(paymentId);
   }
 
+  /** Verify the audit ledger's hash chain — detects any tampering. */
+  verifyLedger() {
+    return this.ledger.verifyIntegrity();
+  }
+
   /** A spend summary for the operator, computed from the audit ledger. */
   report(): SpendReport {
     const payments = { settled: 0, failed: 0, denied: 0, blocked: 0 };
