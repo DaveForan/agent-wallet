@@ -30,10 +30,11 @@ function cart(
   items: { category?: string; price?: number }[],
   total = 100,
   merchantId = "merch-1",
+  acpEndpoint?: string,
 ): Cart {
   return {
     sessionId: "s1",
-    merchant: { id: merchantId, name: "Test Merchant" },
+    merchant: { id: merchantId, name: "Test Merchant", acpEndpoint },
     lineItems: items.map((it, n) => ({
       id: `li${n}`,
       name: `item ${n}`,
@@ -380,6 +381,45 @@ describe("cart-aware policy", () => {
         autonomous,
         req({ amount: money(100, "USD"), cart: cart([{}], 100, "other-store") }),
         { mandate: mandate({ allowedMerchants: ["grocer-1"] }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("allows a cart whose merchant endpoint is on the domain allowlist", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{}], 100, "m", "https://shop.realgrocer.com/acp"),
+        }),
+        { mandate: mandate({ allowedMerchantDomains: ["shop.realgrocer.com"] }) },
+      ),
+      "allow",
+    );
+  });
+
+  test("denies a cart whose merchant endpoint host is not allowlisted", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({
+          amount: money(100, "USD"),
+          cart: cart([{}], 100, "m", "https://evil.example.com/acp"),
+        }),
+        { mandate: mandate({ allowedMerchantDomains: ["shop.realgrocer.com"] }) },
+      ),
+      "deny",
+    );
+  });
+
+  test("denies a cart with no merchant endpoint when domains are pinned", () => {
+    assert.equal(
+      decide(
+        autonomous,
+        req({ amount: money(100, "USD"), cart: cart([{}], 100, "m") }),
+        { mandate: mandate({ allowedMerchantDomains: ["shop.realgrocer.com"] }) },
       ),
       "deny",
     );

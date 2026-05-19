@@ -115,6 +115,13 @@ export interface Mandate {
   allowedCategories?: string[];
   /** Merchants (by cart merchant id) this mandate may buy from. Empty = any. */
   allowedMerchants?: string[];
+  /**
+   * Merchant ACP-endpoint hostnames this mandate may pay. The endpoint host
+   * is where the wallet actually fetches and settles — pinning it (exact
+   * hostname match) binds a payment to operator-approved domains, so a
+   * compromised agent cannot redirect it to a merchant of its choosing.
+   */
+  allowedMerchantDomains?: string[];
   /** Categories never permitted — checked per cart line item (e.g. alcohol). */
   blockedCategories?: string[];
   /** Ceiling on any single cart line item's unit price. */

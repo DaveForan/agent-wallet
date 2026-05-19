@@ -250,6 +250,9 @@ function parseMandate(raw: unknown): Mandate {
   if (Array.isArray(r["allowedMerchants"])) {
     mandate.allowedMerchants = r["allowedMerchants"] as string[];
   }
+  if (Array.isArray(r["allowedMerchantDomains"])) {
+    mandate.allowedMerchantDomains = r["allowedMerchantDomains"] as string[];
+  }
   if (Array.isArray(r["blockedCategories"])) {
     mandate.blockedCategories = r["blockedCategories"] as string[];
   }

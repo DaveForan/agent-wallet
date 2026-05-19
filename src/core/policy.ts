@@ -111,6 +111,17 @@ export class PolicyEngine {
       );
     }
 
+    if (mandate.allowedMerchantDomains?.length && req.cart) {
+      const host = merchantEndpointHost(req.cart.merchant.acpEndpoint);
+      if (!host || !mandate.allowedMerchantDomains.includes(host)) {
+        return deny(
+          `the cart's merchant endpoint ` +
+            `(${req.cart.merchant.acpEndpoint ?? "none"}) is not on the ` +
+            `mandate's merchant-domain allowlist`,
+        );
+      }
+    }
+
     if (mandate.allowedCategories?.length) {
       const allowed = mandate.allowedCategories;
       if (req.cart) {
@@ -222,6 +233,16 @@ export class PolicyEngine {
             );
       }
     }
+  }
+}
+
+/** The hostname of a merchant ACP endpoint, or undefined if unparseable. */
+function merchantEndpointHost(endpoint: string | undefined): string | undefined {
+  if (!endpoint) return undefined;
+  try {
+    return new URL(endpoint).hostname;
+  } catch {
+    return undefined;
   }
 }
 
