@@ -71,6 +71,28 @@ describe("sessionToCart", () => {
   });
 });
 
+describe("AcpClient.createSession", () => {
+  test("posts the create request and returns the session", async () => {
+    const client = new AcpClient({ fetchImpl: fetchReturning(session()) });
+    const created = await client.createSession(
+      "https://shop.example.com/acp",
+      { currency: "USD", line_items: [{ item: { id: "sku_1" }, quantity: 1 }] },
+    );
+    assert.equal(created.id, "cs_1");
+    assert.equal(created.line_items.length, 2);
+  });
+
+  test("throws when the merchant rejects the create", async () => {
+    const client = new AcpClient({
+      fetchImpl: fetchReturning({ error: "bad" }, 400),
+    });
+    await assert.rejects(
+      client.createSession("https://shop.example.com/acp", {}),
+      /HTTP 400/,
+    );
+  });
+});
+
 describe("AcpClient.verify", () => {
   test("returns the merchant's authoritative cart", async () => {
     const client = new AcpClient({ fetchImpl: fetchReturning(session()) });
