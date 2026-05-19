@@ -249,7 +249,9 @@ Each remaining item has a genuine external dependency — not deferred code:
 - The control API requires a bearer token; the agent-facing payment and MCP
   surfaces are unauthenticated and gated by the policy engine.
 - The audit ledger is **hash-chained** — `GET /audit/verify` detects any edit,
-  deletion or reorder of the stored ledger.
+  deletion or reorder of the stored ledger. Set `AGENT_WALLET_LEDGER_KEY`
+  (see `npm run ledger:keygen`) to also **sign** every event, so rewriting
+  history needs the key, not just database access.
 - Outbound fetches are **SSRF-guarded** — bad schemes, literal private
   addresses and hostnames resolving into private ranges are all rejected.
 - Agentic-checkout payments are bound to operator-approved merchant domains
