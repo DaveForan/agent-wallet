@@ -246,8 +246,11 @@ Each remaining item has a genuine external dependency — not deferred code:
 ## Security posture
 
 - The control, payment and MCP servers bind to **127.0.0.1** only.
-- The control API requires a bearer token; the agent-facing payment and MCP
-  surfaces are unauthenticated and gated by the policy engine.
+- The control API requires an operator bearer token. The agent-facing payment
+  and MCP surfaces require a **per-agent token** once any agent is registered
+  (`POST /agents`) — otherwise they are open and gated by policy alone.
+- Each payment is bound to the **authenticated agent** (from its token, not
+  agent input); a mandate can be **scoped to one agent** (`mandate.agentId`).
 - The audit ledger is **hash-chained** — `GET /audit/verify` detects any edit,
   deletion or reorder of the stored ledger. Set `AGENT_WALLET_LEDGER_KEY`
   (see `npm run ledger:keygen`) to also **sign** every event, so rewriting
