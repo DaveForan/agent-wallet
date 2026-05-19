@@ -304,6 +304,19 @@ function renderReport(rep, integrity) {
     return '<div class="meta">order ' + esc(o.orderId) + " · " +
       fmt(esc(o.amount)) + " " + esc(o.currency) + "</div>";
   }).join("");
+  var byAgent = rep.byAgent || [];
+  var agentHeader = byAgent.length
+    ? '<div class="stat"><span>by agent</span><span class="v">' + fmt(byAgent.length) + "</span></div>"
+    : "";
+  var agentRows = byAgent.map(function (a) {
+    var ccy = a.settledByCurrency || {};
+    var ccyParts = Object.keys(ccy).map(function (c) {
+      return fmt(esc(ccy[c])) + " " + esc(c);
+    }).join(", ");
+    return '<div class="meta">' + esc(a.agentId) + " — " +
+      fmt(a.settled) + " settled" + (ccyParts ? " (" + ccyParts + ")" : "") +
+      " · " + fmt(a.pendingApprovals) + " pending · " + fmt(a.denied) + " denied</div>";
+  }).join("");
   var integrityHtml = "";
   if (integrity) {
     integrityHtml = '<div class="stat"><span>ledger integrity</span><span class="v">' +
@@ -321,6 +334,8 @@ function renderReport(rep, integrity) {
     ccyRows +
     '<div class="stat"><span>merchant orders</span><span class="v">' + fmt(orders.length) + "</span></div>" +
     orderRows +
+    agentHeader +
+    agentRows +
     integrityHtml;
 }
 

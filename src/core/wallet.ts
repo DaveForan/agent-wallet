@@ -117,6 +117,18 @@ export interface SpendReport {
     amount: string;
     currency: string;
   }[];
+  /** Per-agent breakdown — derived from the agentId on every requested payment. */
+  byAgent: AgentSpendBreakdown[];
+}
+
+/** What one agent has done, summarised from the audit ledger. */
+export interface AgentSpendBreakdown {
+  agentId: string;
+  settled: number;
+  /** Total settled per currency for this agent, bigint-safe strings. */
+  settledByCurrency: Record<string, string>;
+  denied: number;
+  pendingApprovals: number;
 }
 
 /** Derive a human-readable reason from a rail's unsettled SettlementResult. */
@@ -270,8 +282,37 @@ export class WalletDaemon {
     const payments = { settled: 0, failed: 0, denied: 0, blocked: 0 };
     const settled = new Map<string, bigint>();
     const orders: SpendReport["orders"] = [];
+    // paymentId → agentId, built lazily from payment.requested events.
+    const agentByPayment = new Map<string, string>();
+    // agentId → running bucket. Touched on requested, settled and denied.
+    const agentBucket = new Map<
+      string,
+      { settled: number; denied: number; settledByCurrency: Map<string, bigint> }
+    >();
+    const ensureAgent = (agentId: string) => {
+      let bucket = agentBucket.get(agentId);
+      if (!bucket) {
+        bucket = { settled: 0, denied: 0, settledByCurrency: new Map() };
+        agentBucket.set(agentId, bucket);
+      }
+      return bucket;
+    };
+
     for (const event of this.ledger.history()) {
+      const eventAgent = event.paymentId
+        ? agentByPayment.get(event.paymentId)
+        : undefined;
       switch (event.type) {
+        case "payment.requested": {
+          const request = event.data["request"] as
+            | PaymentRequest
+            | undefined;
+          if (request?.agentId && event.paymentId) {
+            agentByPayment.set(event.paymentId, request.agentId);
+            ensureAgent(request.agentId);
+          }
+          break;
+        }
         case "payment.settled": {
           payments.settled++;
           const result = event.data["settlement"] as
@@ -288,6 +329,14 @@ export class WalletDaemon {
                 currency,
               });
             }
+            if (eventAgent) {
+              const bucket = ensureAgent(eventAgent);
+              bucket.settled++;
+              bucket.settledByCurrency.set(
+                currency,
+                (bucket.settledByCurrency.get(currency) ?? 0n) + amount,
+              );
+            }
           }
           break;
         }
@@ -301,7 +350,10 @@ export class WalletDaemon {
           const decision = event.data["decision"] as
             | PolicyDecision
             | undefined;
-          if (decision?.outcome === "deny") payments.denied++;
+          if (decision?.outcome === "deny") {
+            payments.denied++;
+            if (eventAgent) ensureAgent(eventAgent).denied++;
+          }
           break;
         }
         default:
@@ -312,6 +364,26 @@ export class WalletDaemon {
     for (const [currency, amount] of settled) {
       settledByCurrency[currency] = amount.toString();
     }
+    // Pending-approval counts per agent — from the live approval store.
+    const pendingByAgent = new Map<string, number>();
+    for (const approval of this.approvals.list()) {
+      const agentId = approval.request.agentId;
+      if (agentId) {
+        pendingByAgent.set(agentId, (pendingByAgent.get(agentId) ?? 0) + 1);
+        ensureAgent(agentId);
+      }
+    }
+    const byAgent: AgentSpendBreakdown[] = [...agentBucket.entries()]
+      .map(([agentId, bucket]) => ({
+        agentId,
+        settled: bucket.settled,
+        settledByCurrency: Object.fromEntries(
+          [...bucket.settledByCurrency].map(([c, n]) => [c, n.toString()]),
+        ),
+        denied: bucket.denied,
+        pendingApprovals: pendingByAgent.get(agentId) ?? 0,
+      }))
+      .sort((a, b) => a.agentId.localeCompare(b.agentId));
     return {
       generatedAt: new Date().toISOString(),
       payments,
@@ -325,6 +397,7 @@ export class WalletDaemon {
         revoked: mandate.revoked === true,
       })),
       orders,
+      byAgent,
     };
   }
 
