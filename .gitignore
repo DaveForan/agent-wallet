@@ -7,3 +7,7 @@ dist/
 
 # Local self-custody keystore — never commit private keys.
 .agent-wallet/
+
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/

@@ -25,7 +25,10 @@
     "daemon": "node src/daemon.ts",
     "control:check": "node src/control-smoketest.ts",
     "daemon:check": "node src/daemon-smoketest.ts",
-    "start": "node src/daemon.ts"
+    "start": "node src/daemon.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "keywords": [
     "agent",
@@ -39,7 +42,8 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.8.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitepress": "^1.6.4"
   },
   "dependencies": {
     "@coinbase/cdp-sdk": "^1.49.2",
